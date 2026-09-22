@@ -38,30 +38,39 @@ chooses its move.
 
 ## The Arena
 
-Open `Arena.exe` to test your bot:
+Open `Arena.exe`. It has five views:
 
-1. Click **+ Add bot** and pick your bot's main file (`.py`, `.java`, `.cpp`, …).
-   The Arena picks a run command and compiles Java and C++ for you before
-   each run. To change the run command, right-click your bot on the board.
-2. Click **Check**. This catches the most common problem: a bot that
-   doesn't flush stdout.
-3. Click **Run tournament**. Your bots play a set of sparring partners:
-   always-cooperate, always-defect, random, tit-for-tat, generous tit-for-tat,
-   Pavlov, grudger, tit-for-two-tats and suspicious tit-for-tat. The board
-   fills in live, and the stages replay matches as they finish. Afterwards,
-   click any row to see its score against each opponent.
-4. To watch a particular match, click two rows on the board, then click
-   **Watch**. The replay marks the moves that noise flipped. Once it
-   finishes, hover over a round to see what each side chose.
+**Bots** — click **+ Add bot** and pick your bot's main file (`.py`, `.java`,
+`.cpp`, …); you can select several at once. Then click **Check**: this catches
+the most common problem, a bot that doesn't flush stdout. Java and C++ are
+compiled for you before each run. Right-click a bot to change its run command.
 
-You can add several bots, for example two versions of your own, and they
-play each other as well. Anything your bot prints to stderr is saved to a log
-file; the Arena tells you where after each tournament.
+**Run** — play everyone against everyone: your bots, plus sparring partners
+(always-cooperate, always-defect, random, tit-for-tat, generous tit-for-tat,
+Pavlov, grudger, tit-for-two-tats and suspicious tit-for-tat). Set how many
+matches each pairing plays. Every match is saved to a tournament file, so you
+can close the Arena and open the results again later.
+
+**Standings** — the final table, each bot's points per round with a confidence
+interval, and how cooperative it was. Click a bot to see how it did against
+each opponent.
+
+**Statistics** — click two bots to compare them properly. They are judged on
+the opponents they both faced, with the same noise, so the comparison isn't
+muddied by luck. It tells you whether one really scores more, or whether you
+simply haven't played enough matches to know, and how many more it would take.
+Use this before believing that your latest tweak helped.
+
+**Explorer** — every match played. Click one to watch it round by round, with
+the moves noise flipped marked. Hover over a round to see what each side chose.
+
+Anything your bot prints to stderr is saved to a log file; the Arena says where
+after each run.
 
 The Arena runs your bot the same way the tournament does, so your bot needs
 its language's tools installed:
 
-- **Python:** Python 3 from python.org.
+- **Python:** nothing to install, but Python 3 from python.org also works.
 - **Java:** a JDK, with `java` and `javac` on your PATH.
 - **C++:** `g++` on your PATH.
 

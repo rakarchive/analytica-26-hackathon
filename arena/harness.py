@@ -12,7 +12,7 @@ Two kinds of player share one interface:
       -> END                   tournament over, exit
 
 Timeout, crash and junk-output handling lives in ProcessPlayer so that
-run_local.py, the smoke test and the tournament all behave identically.
+the Arena's checks, its runs and the saved tournament all behave identically.
 """
 
 import os
@@ -90,6 +90,7 @@ class BotStats:
     forfeits: int = 0     # rounds played as D because the bot was dead
     disabled: bool = False
     latencies: list = field(default_factory=list)
+    loaded: dict = None          # set when read back from a tournament file
 
     def merge(self, other):
         for k in ("moves", "timeouts", "junk_lines", "crashes", "forfeits"):
@@ -98,6 +99,8 @@ class BotStats:
         self.latencies.extend(other.latencies)
 
     def summary(self):
+        if getattr(self, "loaded", None):
+            return self.loaded          # read back from a tournament file
         lat = sorted(self.latencies)
         pick = lambda q: lat[min(len(lat) - 1, int(q * len(lat)))] * 1000 if lat else 0.0
         return {
@@ -135,7 +138,7 @@ class LocalPlayer:
 
 def _pump(stream, q):
     # A reader thread (rather than select) keeps this working on Windows,
-    # which teams may be running run_local.py on.
+    # which teams may be running the Arena on.
     try:
         for raw in iter(stream.readline, b""):
             q.put((time.perf_counter(), raw.decode("utf-8", "replace")))
@@ -570,72 +573,93 @@ def write_outputs(out, specs, points, rounds, rows, run_args):
                    "points": points, "rounds": rounds}, f)
 
 
-class Checkpoint:
-    """Crash-safe record of a tournament in progress: <folder>/matches.jsonl,
-    a header line (field, reps, seed) then one line per finished match,
-    flushed as it is written. Because every match's length and noise derive
-    from (seed, rep), resuming replays exactly the missing matches (bots
-    with their own randomness aside)."""
+class TournamentFile:
+    """The record of a whole tournament, written as it is played: one JSON
+    object per line, flushed as it goes, so a crash costs at most the last
+    match and a run can be resumed. It holds every move of every match, which
+    is what the show replays and what the explorer digs through.
 
-    FILE = "matches.jsonl"
+        line 1      header: the field, reps, seed, noise, payoff
+        lines 2..n  one match: who, which repetition, the score, the moves
+        last line   per-bot stats: timeouts, crashes, latency
 
-    def __init__(self, folder, header, resume=False):
-        os.makedirs(folder, exist_ok=True)
-        self.path = os.path.join(folder, self.FILE)
-        self.f = open(self.path, "a" if resume else "w", encoding="utf-8")
+    Reading a .gz file works too (see `load`)."""
+
+    VERSION = 2
+
+    def __init__(self, path, header, resume=False):
+        folder = os.path.dirname(os.path.abspath(path))
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        self.path = path
+        self.f = open(path, "a" if resume else "w", encoding="utf-8")
         if not resume:
             self._write(header)
 
     @staticmethod
     def header(specs, reps, seed, self_play):
-        return {"type": "header", "version": 1, "bots": [s["name"] for s in specs],
-                "kinds": [s["kind"] for s in specs], "reps": reps, "seed": seed,
-                "self_play": bool(self_play), "started": time.strftime("%Y-%m-%d %H:%M:%S")}
+        return {"type": "header", "version": TournamentFile.VERSION,
+                "bots": [{"name": s["name"], "kind": s["kind"]} for s in specs],
+                "reps": reps, "seed": seed, "self_play": bool(self_play),
+                "noise": NOISE, "payoff": {f"{a}{b}": list(v) for (a, b), v in PAYOFF.items()},
+                "rounds": [MIN_ROUNDS, MAX_ROUNDS],
+                "started": time.strftime("%Y-%m-%d %H:%M:%S")}
 
     @classmethod
-    def load(cls, folder):
-        """(header, records) from a folder, or (None, []) if there is no
-        usable checkpoint. A torn last line (crash mid-write) is ignored."""
+    def load(cls, path):
+        """A Tournament, or None if the file isn't one. A torn last line
+        (a crash mid-write) is ignored."""
+        import gzip
         import json
-        path = os.path.join(folder, cls.FILE)
-        if not os.path.exists(path):
-            return None, []
-        header, records = None, []
-        with open(path, encoding="utf-8") as f:
+        if not path or not os.path.exists(path):
+            return None
+        opener = gzip.open if path.endswith(".gz") else open
+        header, matches, stats = None, [], {}
+        with opener(path, "rt", encoding="utf-8") as f:
             for line in f:
                 try:
                     obj = json.loads(line)
                 except ValueError:
                     continue
-                if obj.get("type") == "header":
+                kind = obj.get("type")
+                if kind == "header":
                     header = obj
+                elif kind == "stats":
+                    stats = obj.get("bots", {})
                 elif header is not None:
-                    records.append(obj)
-        return header, records
+                    matches.append(obj)
+        if header is None:
+            return None
+        return Tournament(path, header, matches, stats)
 
     @staticmethod
     def compatible(header, specs, reps, self_play, seed=None):
-        return (header is not None and header["bots"] == [s["name"] for s in specs]
-                and header["kinds"] == [s["kind"] for s in specs] and header["reps"] == reps
-                and header["self_play"] == bool(self_play) and (seed is None or header["seed"] == seed))
+        return (header is not None and header.get("version") == TournamentFile.VERSION
+                and [b["name"] for b in header["bots"]] == [s["name"] for s in specs]
+                and [b["kind"] for b in header["bots"]] == [s["kind"] for s in specs]
+                and header["reps"] == reps and header["self_play"] == bool(self_play)
+                and (seed is None or header["seed"] == seed))
 
-    @classmethod
-    def set_aside(cls, folder):
-        """Rename an old checkpoint out of the way instead of deleting it."""
-        path = os.path.join(folder, cls.FILE)
-        if os.path.exists(path):
-            new = os.path.join(folder, f"matches.{time.strftime('%Y%m%d-%H%M%S')}.jsonl")
+    @staticmethod
+    def set_aside(path):
+        """Move an old record out of the way instead of deleting it."""
+        if path and os.path.exists(path):
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            base = path[:-6] if path.endswith(".jsonl") else path
+            new = f"{base}.{stamp}.jsonl"
             os.replace(path, new)
             return new
         return None
 
     def add(self, i, j, rep, pa, pb, n, moves=None):
-        rec = {"i": i, "j": j, "r": rep, "pa": pa, "pb": pb, "n": n}
+        rec = {"i": i, "j": j, "r": rep, "n": n, "pa": pa, "pb": pb}
         if moves:
-            ma, mb = moves
-            rec.update(ca=sum(ch in "Cc" for ch in ma), cb=sum(ch in "Cc" for ch in mb),
-                       fa="#" in ma, fb="#" in mb)
+            rec["a"], rec["b"] = moves
         self._write(rec)
+
+    def write_stats(self, stats):
+        self._write({"type": "stats",
+                     "bots": {name: s.summary() for name, s in stats.items()}})
 
     def _write(self, obj):
         import json
@@ -646,19 +670,76 @@ class Checkpoint:
         self.f.close()
 
 
-def restore_totals(records, n):
-    """points[i][j], rounds[i][j] and the set of played (i, j, rep)."""
-    points = [[0] * n for _ in range(n)]
-    rounds = [[0] * n for _ in range(n)]
-    done = set()
-    for r in records:
-        i, j = r["i"], r["j"]
-        points[i][j] += r["pa"]
-        points[j][i] += r["pb"]
-        rounds[i][j] += r["n"]
-        rounds[j][i] += r["n"]
-        done.add((i, j, r["r"]))
-    return points, rounds, done
+class Tournament:
+    """A tournament read back from a file: the field, every match, the stats."""
+
+    def __init__(self, path, header, matches, stats):
+        self.path, self.header, self.matches, self.bot_stats = path, header, matches, stats
+        self.bots = header["bots"]
+        self.names = [b["name"] for b in self.bots]
+        self.kinds = [b["kind"] for b in self.bots]
+        self.reps = header["reps"]
+        self.seed = header["seed"]
+        self.self_play = header["self_play"]
+        self.noise = header.get("noise", NOISE)
+
+    def __len__(self):
+        return len(self.matches)
+
+    @property
+    def n(self):
+        return len(self.bots)
+
+    def duel(self, m):
+        """A team-against-team match (not one involving a house bot)."""
+        return self.kinds[m["i"]] == self.kinds[m["j"]] == "team"
+
+    def expected(self):
+        """How many matches a complete run of this field holds."""
+        n = self.n
+        pairings = n * (n + 1) // 2 if self.self_play else n * (n - 1) // 2
+        return pairings * self.reps
+
+    def complete(self):
+        return len(self.matches) >= self.expected()
+
+    def has_moves(self):
+        return bool(self.matches) and "a" in self.matches[0]
+
+    def in_cycles(self):
+        """The matches in playback order: cycle by cycle (one cycle is every
+        pairing once), and within a cycle the house matches first."""
+        return sorted(self.matches, key=lambda m: (m["r"], 1 if self.duel(m) else 0))
+
+    def totals(self):
+        """points[i][j], rounds[i][j] over every match in the file."""
+        n = self.n
+        points = [[0] * n for _ in range(n)]
+        rounds = [[0] * n for _ in range(n)]
+        for m in self.matches:
+            i, j = m["i"], m["j"]
+            points[i][j] += m["pa"]
+            points[j][i] += m["pb"]
+            rounds[i][j] += m["n"]
+            rounds[j][i] += m["n"]
+        return points, rounds
+
+    def played(self):
+        """The (i, j, rep) already in the file, for resuming a run."""
+        return {(m["i"], m["j"], m["r"]) for m in self.matches}
+
+    def stats_objects(self):
+        """Per-bot stats by index, as saved with the file."""
+        out = {}
+        for i, name in enumerate(self.names):
+            s = BotStats()
+            s.loaded = self.bot_stats.get(name) or None
+            if s.loaded:
+                for k in ("moves", "timeouts", "junk_lines", "crashes", "forfeits"):
+                    setattr(s, k, s.loaded.get(k, 0))
+                s.disabled = s.loaded.get("disabled", False)
+            out[i] = s
+        return out
 
 
 def projected_seconds(mean_latencies, n_bots, reps, workers):

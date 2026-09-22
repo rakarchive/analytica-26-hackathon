@@ -29,6 +29,7 @@ import multiprocessing
 import os
 import queue
 import random
+import importlib
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,8 @@ from tkinter import font as tkfont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import harness  # noqa: E402
+from game import (MAX_REPLAYS_PER_PAIR, PAST, WORD, actual, headline,  # noqa: E402,F401
+                  match_story, new_story, verdict)
 from baselines import BASELINES  # noqa: E402
 
 BG, PANEL, PANEL2, LINE = "#0e1218", "#161c26", "#1b2230", "#2a3344"
@@ -70,18 +73,6 @@ def pick_family(root):
             return f
     return "TkDefaultFont"
 
-
-WORD = {"C": "cooperate", "D": "defect"}
-PAST = {"C": "cooperated", "D": "defected"}
-
-
-def actual(ch):
-    return "D" if ch == "#" else ch.upper()
-
-
-# --------------------------------------------------------------------------
-# Your bots: how to build and run them
-# --------------------------------------------------------------------------
 
 FROZEN = getattr(sys, "frozen", False)  # running as the packaged Arena.exe
 
@@ -235,101 +226,6 @@ class Engine(threading.Thread):
         finally:
             if self.checkpoint:
                 self.checkpoint.close()
-
-
-def verdict(a, b):
-    """What a match was like, from each side's points per round: (kind,
-    headline template). The score is the points you extract for yourself,
-    not beating the other bot, so the kinds are about how much each side
-    took. Presentation mode replays a pairing again only when the kind changes."""
-    if a >= 2.5 and b >= 2.5:
-        return ("coop",), "Cooperation held: {A} {a:.2f}, {B} {b:.2f} of a possible 3"
-    if a <= 1.5 and b <= 1.5:
-        return ("lock",), "Mutual defection: both stuck near 1 a round"
-    if abs(a - b) >= 1.0:
-        return ("take", a > b), "{W} extracted {w:.2f} a round, {L} only {l:.2f}"
-    if a + b >= 4.4:
-        return ("unstable",), "Cooperation kept breaking down: {A} {a:.2f}, {B} {b:.2f}"
-    return ("grind",), "Mostly defection: {A} {a:.2f}, {B} {b:.2f}"
-
-
-def new_story(shown, a, b):
-    """Is a match (points per round a, b) a new story for its pairing, given
-    the (kind, a, b) of matches already shown? Its kind must be new AND its
-    points clearly apart from every shown one, so noise nudging a match across
-    a threshold (2.49 vs 2.51) doesn't count as something new."""
-    if len(shown) >= MAX_REPLAYS_PER_PAIR:
-        return None
-    kind = verdict(a, b)[0]
-    if any(k == kind or abs(a - x) + abs(b - y) < 0.6 for k, x, y in shown):
-        return None
-    return kind
-
-
-def headline(a, b, na, nb):
-    kind, text = verdict(a, b)
-    (W, w), (L, l) = ((na, a), (nb, b)) if a >= b else ((nb, b), (na, a))
-    return text.format(A=na, B=nb, a=a, b=b, W=W, w=w, L=L, l=l)
-
-
-def match_story(ma, mb, na, nb):
-    """What happened inside a match, from its move strings (see
-    harness.encode_record). Returns (caption lines, metrics); the metrics
-    also pick the presentation's highlights."""
-    A = [actual(c) for c in ma]
-    B = [actual(c) for c in mb]
-    n = len(A)
-    flips = sum(c.islower() for c in ma) + sum(c.islower() for c in mb)
-    forfeits = (ma.count("#"), mb.count("#"))
-    # Unprovoked defections: a deliberate D (not noise) right after a CC round.
-    unprov = [[], []]
-    for t in range(1, n):
-        if A[t - 1] == B[t - 1] == "C":
-            for side, s in ((0, ma), (1, mb)):
-                if s[t] == "D":
-                    unprov[side].append(t + 1)
-    # Longest mutual-defection lock.
-    lock = lock_start = run = 0
-    for t in range(n):
-        run = run + 1 if A[t] == B[t] == "D" else 0
-        if run > lock:
-            lock, lock_start = run, t - run + 2
-    # Longest retaliation spiral set off by noise: from a flip that broke a
-    # CC round to the next CC round (or the end of the match).
-    echo = echo_at = 0
-    echo_recovered = True
-    for t in range(1, n):
-        if A[t - 1] == B[t - 1] == "C" and (ma[t] == "d" or mb[t] == "d"):
-            k = t + 1
-            while k < n and not (A[k] == B[k] == "C"):
-                k += 1
-            if k - t > echo:
-                echo, echo_at, echo_recovered = k - t, t + 1, k < n
-    lines = []
-    for side, name in ((0, na), (1, nb)):
-        if forfeits[side]:
-            lines.append((100, f"{name} forfeited {forfeits[side]} rounds (too slow, or crashed)"))
-    if lock >= 8:
-        lines.append((lock, f"Locked in mutual defection for {lock} rounds from round {lock_start}"))
-    if echo >= 4:
-        lines.append((echo * 1.2, f"A noise flip in round {echo_at} broke cooperation for {echo} rounds"
-                      + ("" if echo_recovered else ", and it never came back")))
-    for side, name in ((0, na), (1, nb)):
-        if unprov[side]:
-            k = len(unprov[side])
-            lines.append((min(30, 4 * k), f"{name} defected unprovoked {k} time{'s' if k > 1 else ''}"
-                          f", first in round {unprov[side][0]}"))
-    if not lines and flips:
-        lines.append((3, f"{flips} noise flips, each forgiven within a round or two"))
-    if not lines:
-        lines.append((1, "Steady from start to finish"))
-    lines.sort(key=lambda x: -x[0])
-    metrics = {"flips": flips, "lock": lock, "echo": echo, "unprovoked": len(unprov[0]) + len(unprov[1]),
-               "forfeits": sum(forfeits)}
-    return [text for _, text in lines[:2]], metrics
-
-
-MAX_REPLAYS_PER_PAIR = 3  # first match plus up to two that end differently
 
 
 # --------------------------------------------------------------------------
@@ -668,6 +564,9 @@ class BaseApp:
         self._append_log(text, color)
 
     def _arrive(self, m):
+        i, j, pa, pb, n, moves, rep = m
+        self.matches.append({"i": i, "j": j, "r": rep, "n": n, "pa": pa, "pb": pb,
+                             "a": moves[0], "b": moves[1]})
         self.pending.append(m)
 
     def _advance(self, dt):
@@ -691,7 +590,9 @@ class BaseApp:
         for st in self.stages:
             st.step(dt, self.rps)
 
-    def _layout_right(self, W, H, top, m):
+    def _layout_content(self, W, H, top, m):
+        """Fill the area under the toolbar. The default is the board on the
+        left, replay stages and the log on the right."""
         bw = W * 0.5
         self.board = (m, top, bw - m / 2, H - m)
         rx = bw + m / 2
@@ -705,6 +606,7 @@ class BaseApp:
         self.log_box = (rx, top + 2 * (st_h + m / 2), rw, log_h)
         self.log_win = self.cv.create_window(rx, self.log_box[1], window=self.logbox, anchor="nw",
                                              width=rw, height=log_h)
+        self._layout_board()
 
     def _draw_overlays(self):
         self._draw_card()
@@ -740,6 +642,10 @@ class BaseApp:
         """(played, shown) fractions for the two layers of the progress bar."""
         t = max(1, self.total)
         return self.played / t, self.applied / t
+
+    def show_badges(self):
+        """Whether to mark bots with their protocol-check result."""
+        return not self.presenting
 
     def stage_hint(self):
         return "Click two rows on the board, then Watch.\nDuring a run, fresh matches replay here."
@@ -810,6 +716,8 @@ class BaseApp:
         self.run_presenting = False
         self.pair_kinds = {}                    # (i, j) -> [(kind, a, b)] already told
         self.applied_at_start = 0
+        self.matches = []                       # every match played, with its moves
+        self.tour = None                        # harness.Tournament once a run finishes
         self._reset_extra()
 
     def display_name(self, i):
@@ -918,8 +826,7 @@ class BaseApp:
             self.root.update_idletasks()
             top += self.toolbar.winfo_reqheight() + 16 * s
 
-        self._layout_right(W, H, top, m)
-        self._layout_board()
+        self._layout_content(W, H, top, m)
         self._draw_overlays()
         self._update_header()
 
@@ -1332,50 +1239,51 @@ class BaseApp:
         self.run_presenting = self.presenting
         self.rps = opts["stage_speed"]
         out = opts["out"]
-        log_dir = os.path.join(out, "logs") if out else BOT_LOG_DIR
+        log_dir = os.path.join(os.path.dirname(out), "logs") if out else BOT_LOG_DIR
         os.makedirs(log_dir, exist_ok=True)
         seed = opts["seed"]
 
-        # Resume an unfinished run saved in the results folder, if it matches.
-        records, checkpoint = [], None
+        # Resume the run saved in the tournament file, if it is the same field.
+        records, tfile = [], None
         if out:
-            header, old = harness.Checkpoint.load(out)
+            old = harness.TournamentFile.load(out)
             resume = False
-            if header and harness.Checkpoint.compatible(header, specs, reps, self_play, seed):
+            if old and harness.TournamentFile.compatible(old.header, specs, reps, self_play, seed):
                 done = len(old)
                 if done >= self.total:
-                    question = (f"{out} holds a finished tournament with this field "
-                                f"({done:,} matches, seed {header['seed']}).\n\n"
-                                "Yes: show those results again.\nNo: play a new tournament "
-                                "(the old record is kept as a backup).")
+                    question = (f"{os.path.basename(out)} holds a finished tournament with this field "
+                                f"({done:,} matches, seed {old.seed}).\n\n"
+                                "Yes: load it.\nNo: play a new tournament "
+                                "(the old file is kept as a backup).")
                 else:
-                    question = (f"{out} holds an unfinished tournament with this field: "
-                                f"{done:,} of {self.total:,} matches played (seed {header['seed']}).\n\n"
-                                "Yes: resume it.\nNo: start over (the old record is kept as a backup).")
+                    question = (f"{os.path.basename(out)} holds an unfinished tournament with this "
+                                f"field: {done:,} of {self.total:,} matches (seed {old.seed}).\n\n"
+                                "Yes: resume it.\nNo: start over (the old file is kept as a backup).")
                 resume = messagebox.askyesno("Resume tournament?", question, parent=self.root)
-            elif header:
-                self._append_log("The results folder holds a run with a different field or settings; "
+            elif old:
+                self._append_log("That tournament file holds a different field or settings; "
                                  "starting a new one.", WARN)
             if resume:
-                seed, records = header["seed"], old
-                checkpoint = harness.Checkpoint(out, header, resume=True)
+                seed, records = old.seed, old.matches
+                tfile = harness.TournamentFile(out, old.header, resume=True)
             else:
-                backup = harness.Checkpoint.set_aside(out)
+                backup = harness.TournamentFile.set_aside(out)
                 if backup:
-                    self._append_log(f"Previous record kept as {os.path.basename(backup)}", DIM)
+                    self._append_log(f"Previous file kept as {os.path.basename(backup)}", DIM)
         if seed is None:
             seed = random.randrange(1 << 30)
-        if out and checkpoint is None:
-            checkpoint = harness.Checkpoint(out, harness.Checkpoint.header(specs, reps, seed, self_play))
+        if out and tfile is None:
+            tfile = harness.TournamentFile(out, harness.TournamentFile.header(specs, reps, seed, self_play))
 
         self.run_info = {"reps": reps, "seed": seed, "workers": opts["workers"], "self_play": self_play,
-                         "ref_weight": opts["ref_weight"], "log_dir": log_dir, "out": out}
+                         "ref_weight": opts["ref_weight"], "log_dir": log_dir, "out": out,
+                         "header": harness.TournamentFile.header(specs, reps, seed, self_play)}
         skip = self._restore(records)
         self.applied_at_start = self.applied  # restored matches don't count as arrivals
         self._on_run_start(reps, self_play, records, minutes)
         priority = self._priority(specs)
         self.engine = Engine(specs, reps, seed, self.run_info["workers"], self_play, log_dir, self.ui_q,
-                             skip, checkpoint, priority)
+                             skip, tfile, priority)
         self.engine.start()
         self.state = "running"
         self.working = True
@@ -1391,6 +1299,7 @@ class BaseApp:
     def _restore(self, records):
         """Fold saved matches into the standings. Returns the (i, j, rep) set."""
         done = set()
+        self.matches = list(records)
         for r in records:
             i, j, pa, pb, n = r["i"], r["j"], r["pa"], r["pb"], r["n"]
             for me, other, p, c in ((i, j, pa, r.get("ca")), (j, i, pb, r.get("cb"))):
@@ -1535,6 +1444,11 @@ class BaseApp:
             except OSError as e:
                 self._append_log(f"Could not save results to {out}: {e}", DOWN)
         self.champion_index = min(ranks, key=ranks.get) if ranks else None
+        header = self.run_info.get("header") or harness.TournamentFile.header(
+            self.specs, self.run_info.get("reps", 0), self.run_info.get("seed"), False)
+        self.tour = harness.Tournament(self.run_info.get("out", ""), header, self.matches,
+                                       {s["name"]: stats[i].summary() for i, s in enumerate(self.specs)
+                                        if i in stats})
         self._finished(ranks, stats)
         self._refresh_buttons()
 
@@ -1577,7 +1491,7 @@ class BaseApp:
                 arrow_txt, arrow_col = ("▲", UP) if arrow[1] else ("▼", DOWN)
             medal = MEDALS.get(rk) if self.applied and team else None
             badge = ("", FAINT)
-            if team and not self.presenting:
+            if team and self.show_badges():
                 status = self.check_status.get(spec["name"])
                 badge = self.BADGES[status] if status else (("not checked", FAINT) if spec.get("added") else badge)
             vals = {
@@ -1617,6 +1531,91 @@ class BaseApp:
         played, shown = self._progress()
         self.cv.coords(self.bar_played, x0, y0, f(played), y1)
         self.cv.coords(self.bar_shown, x0, y0, f(shown), y1)
+
+    def load_teams(self, path):
+        try:
+            specs = harness.load_manifest(path)
+        except (OSError, ValueError, KeyError) as e:
+            self.log(f"Could not load {path}: {e}", DOWN)
+            return False
+        self.team_specs = specs
+        self.check_status = {}
+        self._field_changed()
+        self.log(f"Loaded {len(specs)} team bots from {os.path.basename(path)}.", UP)
+        return True
+
+    def load_teams_dialog(self):
+        path = filedialog.askopenfilename(title="Team manifest", filetypes=[("Manifest", "*.json")])
+        if path:
+            self.load_teams(path)
+
+    def load_house(self, path):
+        """House bots come from a file outside the app (the organizer's
+        reference_bots.py), so the app never contains them."""
+        folder, fname = os.path.split(os.path.abspath(path))
+        if folder not in sys.path:
+            sys.path.insert(0, folder)  # worker processes inherit sys.path
+        try:
+            mod = importlib.import_module(os.path.splitext(fname)[0])
+            specs = [dict(s, kind="ref") for s in mod.reference_specs()]
+        except Exception as e:
+            self.log(f"Could not load house bots from {path}: {e}", DOWN)
+            return False
+        self.house_specs = specs
+        self.log(f"Loaded {len(specs)} house bots. Sparring partners switched off.", UP)
+        if self.baselines_var.get():
+            self.baselines_var.set(False)  # triggers _field_changed
+        else:
+            self._field_changed()
+        return True
+
+    def load_house_dialog(self):
+        path = filedialog.askopenfilename(title="House bots (Python file with reference_specs())",
+                                          filetypes=[("Python", "*.py")])
+        if path:
+            self.load_house(path)
+
+    def check_all(self):
+        teams = [dict(s) for s in self.specs if s["kind"] == "team"]
+        if not teams:
+            self.log("No team bots to check. Load a manifest or add bots first.", WARN)
+            return
+        reps = self.num(self.reps_var, int, 100)
+        workers = self.num(self.workers_var, int, default_workers())
+        n_field = self.n
+
+        def work():
+            results = []
+            self.ui_q.put(("card", {"kind": "summary", "state": "running", "results": [], "total": len(teams)}))
+            for spec in teams:
+                ok, out = build(spec)
+                if not ok:
+                    r = {"name": spec["name"], "status": "fail",
+                         "reason": "build failed: " + (out.strip().splitlines() or ["?"])[-1]}
+                else:
+                    rep = harness.smoke_test(spec["cmd"], cwd=spec["cwd"])
+                    bad = next((k for k in rep.checks if k.status == rep.worst and k.status != "ok"), None)
+                    reason = f"{bad.label}: {bad.detail.splitlines()[0]}" if bad and bad.detail else \
+                        (bad.label if bad else "all checks passed")
+                    st = rep.stats.summary()
+                    r = {"name": spec["name"], "status": rep.worst, "reason": reason,
+                         "mean_ms": st["mean_ms"] if rep.stats.latencies else None}
+                results.append(r)
+                self.ui_q.put(("status", (r["name"], r["status"])))
+                self.ui_q.put(("card", {"kind": "summary", "state": "running", "results": list(results),
+                                        "total": len(teams)}))
+            means = [r["mean_ms"] / 1000 for r in results if r.get("mean_ms") is not None]
+            secs = harness.projected_seconds(means, n_field, reps, workers)
+            secs30 = harness.projected_seconds(means, n_field, 30, workers)
+            projection = (f"Projected run: ~{secs / 60:.1f} min at {reps} matches per pairing on {workers} "
+                          f"workers  ·  ~{secs30 / 60:.1f} min at 30")
+            self.ui_q.put(("card", {"kind": "summary", "state": "done", "results": results,
+                                    "total": len(teams), "projection": projection}))
+            failing = [r["name"] for r in results if r["status"] == "fail"]
+            self.log(f"Checked {len(teams)} bots: " + (f"{len(failing)} failing ({', '.join(failing)})"
+                                                       if failing else "all ready."),
+                     DOWN if failing else UP)
+        self._work(work)
 
     def _on_motion(self, event):
         x, y = self.cv.canvasx(event.x), self.cv.canvasy(event.y)
