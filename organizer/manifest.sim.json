@@ -3,102 +3,102 @@
   {
    "name": "Tit4Tat Fans",
    "dir": "simbots",
-   "run": "python3 simbot.py tft"
+   "run": "python3 tit_for_tat.py"
   },
   {
    "name": "The Defectors",
    "dir": "simbots",
-   "run": "python3 simbot.py alld"
+   "run": "python3 always_defect.py"
   },
   {
    "name": "Grim Reapers",
    "dir": "simbots",
-   "run": "python3 simbot.py grim"
+   "run": "python3 grim_trigger.py"
   },
   {
    "name": "Stochastic Squad",
    "dir": "simbots",
-   "run": "python3 simbot.py coin 0.8"
+   "run": "python3 mostly_cooperate.py"
   },
   {
    "name": "The Generous",
    "dir": "simbots",
-   "run": "python3 simbot.py gtft 0.3"
+   "run": "python3 generous_tft.py"
   },
   {
    "name": "Barely Generous",
    "dir": "simbots",
-   "run": "python3 simbot.py gtft 0.1"
+   "run": "python3 barely_generous.py"
   },
   {
    "name": "Pavlov's Dogs",
    "dir": "simbots",
-   "run": "python3 simbot.py pavlov"
+   "run": "python3 pavlov.py"
   },
   {
    "name": "Noise Cancellers",
    "dir": "simbots",
-   "run": "python3 simbot.py ctft"
+   "run": "python3 contrite_tft.py"
   },
   {
    "name": "Cooperative Kernel",
    "dir": "simbots",
-   "run": "python3 simbot.py ctft firm"
+   "run": "python3 contrite_firm.py"
   },
   {
    "name": "Two Strikes",
    "dir": "simbots",
-   "run": "python3 simbot.py tf2t"
+   "run": "python3 tit_for_two_tats.py"
   },
   {
    "name": "Forgive & Forget",
    "dir": "simbots",
-   "run": "python3 simbot.py wgrudge"
+   "run": "python3 window_grudge.py"
   },
   {
    "name": "Majority Rule",
    "dir": "simbots",
-   "run": "python3 simbot.py majority"
+   "run": "python3 majority.py"
   },
   {
    "name": "Gradual Escalation",
    "dir": "simbots",
-   "run": "python3 simbot.py gradual"
+   "run": "python3 gradual.py"
   },
   {
    "name": "Joss Stick",
    "dir": "simbots",
-   "run": "python3 simbot.py joss"
+   "run": "python3 joss.py"
   },
   {
    "name": "Sneaky Snakes",
    "dir": "simbots",
-   "run": "python3 simbot.py sneaky"
+   "run": "python3 sneaky.py"
   },
   {
    "name": "Detectives",
    "dir": "simbots",
-   "run": "python3 simbot.py detective"
+   "run": "python3 detective.py"
   },
   {
    "name": "Trust Issues",
    "dir": "simbots",
-   "run": "python3 simbot.py prober"
+   "run": "python3 prober.py"
   },
   {
    "name": "Bayes Watch",
    "dir": "simbots",
-   "run": "python3 simbot.py bayes"
+   "run": "python3 bayes.py"
   },
   {
    "name": "Axelrod Acolytes",
    "dir": "simbots",
-   "run": "python3 simbot.py adaptive"
+   "run": "python3 adaptive.py"
   },
   {
    "name": "Zero Determinants",
    "dir": "simbots",
-   "run": "python3 simbot.py zd"
+   "run": "python3 zd_extort.py"
   }
  ]
 }
