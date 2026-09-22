@@ -33,8 +33,9 @@ from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,
                 BaseApp, FlatButton, adopt_portable_tools, baseline_specs, default_workers,
                 user_bot_spec)
 
-VIEWS = [("bots", "Bots"), ("run", "Run"), ("standings", "Standings"),
-         ("stats", "Statistics"), ("explorer", "Explorer")]
+# Three places to be: your bots, how they did, and the matches themselves.
+# Everything else lives under Options.
+VIEWS = [("bots", "Bots"), ("results", "Results"), ("matches", "Matches")]
 
 
 class Arena(BaseApp):
@@ -45,11 +46,13 @@ class Arena(BaseApp):
 
     def __init__(self, root):
         self.view = "bots"
+        self.options_open = False
         self.run_started = 0.0
         self._panel_at = 0.0
         self.explorer_top = 0        # first row shown in the match list
         self.explorer_rows = []      # the matches currently listed
         self.explorer_filter = None  # a bot index, or None for all
+        self.explorer_note = ""
         super().__init__(root)
         root.bind("<MouseWheel>", self._wheel)
         root.bind("<Button-4>", lambda e: self._wheel(e, 1))
@@ -69,6 +72,7 @@ class Arena(BaseApp):
         self.baselines_var = tk.BooleanVar(value=True)
         self.file_var = tk.StringVar(value="")
         self.delta_var = tk.StringVar(value="0.05")
+        self.details_var = tk.BooleanVar(value=False)
         self.baselines_var.trace_add("write", lambda *a: self._field_changed())
 
     def _compose_field(self):
@@ -93,29 +97,49 @@ class Arena(BaseApp):
             b = FlatButton(bar, text, lambda k=key: self.show_view(k))
             b.pack(side="left", padx=(0, 6))
             self.view_buttons[key] = b
-        self.hint = self._label(bar, "", FAINT)
-        self.hint.pack(side="left", padx=16)
 
-        self.rows_by_view = {}
+        holder = tk.Frame(bar, bg=BG)
+        holder.pack(side="left", padx=(12, 0))
+        self.actions = {}
 
-        def row(view):
-            f = tk.Frame(tb, bg=BG)
-            self.rows_by_view[view] = f
+        def actions_for(view):
+            f = tk.Frame(holder, bg=BG)
+            self.actions[view] = f
             return f
 
-        f = row("bots")
+        f = actions_for("bots")
         for key, text, cmd in (("add", "+ Add bot", self.add_bot), ("check", "Check", self.check),
-                               ("checkall", "Check all", self.check_all),
-                               ("house", "Load house bots…", self.load_house_dialog)):
+                               ("checkall", "Check all", self.check_all)):
             b = FlatButton(f, text, cmd)
             b.pack(side="left", padx=(0, 8))
             self.buttons[key] = b
-        self._checkbox(f, "Sparring partners", self.baselines_var).pack(side="left", padx=(8, 0))
 
-        f = row("run")
-        b = FlatButton(f, "Run tournament", self.run_or_stop, primary=True)
-        b.pack(side="left", padx=(0, 10))
-        self.buttons["run"] = b
+        f = actions_for("results")
+        FlatButton(f, "Export CSV…", self.export_csv).pack(side="left", padx=(0, 8))
+
+        f = actions_for("matches")
+        for text, cmd in (("Only the selected bot", self.filter_selected),
+                          ("All matches", self.filter_none)):
+            FlatButton(f, text, cmd).pack(side="left", padx=(0, 8))
+
+        self.buttons["run"] = FlatButton(bar, "Run tournament", self.run_or_stop, primary=True)
+        self.buttons["run"].pack(side="left", padx=(16, 8))
+        self.opt_button = FlatButton(bar, "Options ▸", self.toggle_options)
+        self.opt_button.pack(side="left")
+        self.hint = self._label(bar, "", FAINT)
+        self.hint.pack(side="left", padx=14)
+
+        # Everything you rarely touch, in one place.
+        opt = self.options = tk.Frame(tb, bg=PANEL, padx=14, pady=10, highlightthickness=1,
+                                      highlightbackground=LINE)
+
+        def line(title):
+            f = tk.Frame(opt, bg=PANEL)
+            f.pack(fill="x", pady=3)
+            self._label(f, title, FAINT).pack(side="left", padx=(0, 12))
+            return f
+
+        f = line("TOURNAMENT ")
         self._label(f, "Matches per pairing").pack(side="left")
         self._spin(f, self.reps_var, 1, 1000, width=4).pack(side="left", padx=(6, 14))
         self._label(f, "Seed").pack(side="left")
@@ -123,28 +147,30 @@ class Arena(BaseApp):
         self._label(f, "Workers").pack(side="left")
         self._spin(f, self.workers_var, 1, 64, width=3).pack(side="left", padx=(6, 14))
         self._checkbox(f, "Self-play", self.self_play_var).pack(side="left", padx=(0, 14))
-        self._label(f, "Tournament file").pack(side="left")
-        self._entry(f, self.file_var, 24).pack(side="left", padx=(6, 6))
+        self._checkbox(f, "Sparring partners", self.baselines_var).pack(side="left", padx=(0, 14))
+        FlatButton(f, "Load house bots…", self.load_house_dialog).pack(side="left")
+
+        f = line("FILE       ")
+        self._entry(f, self.file_var, 40).pack(side="left", padx=(0, 8))
         FlatButton(f, "Choose…", self.choose_file).pack(side="left", padx=(0, 8))
         FlatButton(f, "Open…", self.load_file_dialog).pack(side="left")
 
-        f = row("standings")
+        f = line("COMPARING  ")
         self._label(f, "House weight").pack(side="left")
         self._spin(f, self.weight_var, 0.5, 5, inc=0.5, width=4).pack(side="left", padx=(6, 14))
-        FlatButton(f, "Export CSV…", self.export_csv).pack(side="left", padx=(0, 8))
-        self._label(f, "click a bot for its scores against each opponent", FAINT).pack(side="left")
+        self._label(f, "Difference worth detecting").pack(side="left")
+        self._entry(f, self.delta_var, 6).pack(side="left", padx=(6, 6))
+        self._label(f, "points per round", FAINT).pack(side="left", padx=(0, 14))
+        self._checkbox(f, "Show the test's workings", self.details_var).pack(side="left")
 
-        f = row("stats")
-        self._label(f, "Click two bots on the board.   Difference worth detecting").pack(side="left")
-        self._entry(f, self.delta_var, 6).pack(side="left", padx=(6, 8))
-        self._label(f, "points per round", FAINT).pack(side="left")
-
-        f = row("explorer")
-        for text, cmd in (("Only the selected bot", self.filter_selected),
-                          ("All matches", self.filter_none)):
-            FlatButton(f, text, cmd).pack(side="left", padx=(0, 8))
-        self.explorer_hint = self._label(f, "", FAINT)
-        self.explorer_hint.pack(side="left", padx=8)
+    def toggle_options(self):
+        self.options_open = not self.options_open
+        if self.options_open:
+            self.options.pack(fill="x", pady=(10, 0))
+        else:
+            self.options.pack_forget()
+        self.opt_button.config(text="Options ▾" if self.options_open else "Options ▸")
+        self.layout()
 
     def show_view(self, view):
         self.view = view
@@ -152,10 +178,10 @@ class Arena(BaseApp):
             b.bg = ACCENT if key == view else PANEL2
             b.hover_bg = "#6f9cf2" if key == view else LINE
             b.set_enabled(True)
-        for f in self.rows_by_view.values():
+        for key, f in self.actions.items():
             f.pack_forget()
-        self.rows_by_view[view].pack(fill="x", pady=(10, 0))
-        if view == "explorer":
+        self.actions[view].pack(side="left")
+        if view == "matches":
             self._build_explorer_rows()
         self.layout()
         self._refresh_buttons()
@@ -165,16 +191,29 @@ class Arena(BaseApp):
             return
         idle = not self.working and self.state in ("ready", "final")
         has_team = any(s["kind"] == "team" for s in self.specs)
-        for key in ("add", "house"):
-            self.buttons[key].set_enabled(idle)
+        self.buttons["add"].set_enabled(idle)
         self.buttons["check"].set_enabled(idle and has_team)
         self.buttons["checkall"].set_enabled(idle and has_team)
         self.buttons["run"].set_enabled(not self.working or self.state in ("running", "paused"))
         self.buttons["run"].config(text="Stop" if self.state in ("running", "paused")
                                    else "Run tournament")
-        picked = [self.display_name(i) for i in self.selected]
-        self.hint.config(text="   ·   ".join(picked) if picked else
-                         f"{self.n} bots" + ("" if self.tour else " · no results yet"))
+        self.hint.config(text=self._tab_hint())
+
+    def _tab_hint(self):
+        """One line saying what to do here."""
+        if self.state == "running":
+            return "playing…"
+        if self.view == "bots":
+            if not any(s.get("added") for s in self.specs):
+                return "add your bot, then Check it"
+            return "Check a bot, or Run tournament"
+        if self.view == "results":
+            if not self.tour:
+                return "run a tournament to see results"
+            if len(self.selected) >= 2:
+                return "comparing the two selected bots"
+            return "click a bot for its details, two to compare them"
+        return getattr(self, "explorer_note", "click a match to watch it")
 
     # ---------------- tournament files ----------------
 
@@ -217,7 +256,7 @@ class Arena(BaseApp):
                          "ref_weight": self.num(self.weight_var, float, 1.0)}
         self.log(f"Opened {len(tour):,} matches from {os.path.basename(path)} "
                  f"({tour.n} bots, {tour.reps} per pairing, seed {tour.seed}).", UP)
-        self.show_view("standings")
+        self.show_view("results")
         return True
 
     def export_csv(self):
@@ -247,11 +286,11 @@ class Arena(BaseApp):
 
     def filter_selected(self):
         self.explorer_filter = self.selected[-1] if self.selected else None
-        self.show_view("explorer")
+        self.show_view("matches")
 
     def filter_none(self):
         self.explorer_filter = None
-        self.show_view("explorer")
+        self.show_view("matches")
 
     def _build_explorer_rows(self):
         ms = self.matches or []
@@ -260,10 +299,10 @@ class Arena(BaseApp):
             ms = [m for m in ms if f in (m["i"], m["j"])]
         self.explorer_rows = ms
         who = "every bot" if self.explorer_filter is None else self.display_name(self.explorer_filter)
-        self.explorer_hint.config(text=f"{len(ms):,} matches · {who} · click one to watch it")
+        self.explorer_note = f"{len(ms):,} matches · {who} · click one to watch it"
 
     def _wheel(self, event, direction=None):
-        if self.view != "explorer" or not self.explorer_rows:
+        if self.view != "matches" or not self.explorer_rows:
             return
         step = direction if direction is not None else (1 if event.delta > 0 else -1)
         self.explorer_top = max(0, self.explorer_top - step * 3)
@@ -273,24 +312,19 @@ class Arena(BaseApp):
         """Replay one match from the file in the viewer."""
         self.rps = 60.0
         self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
-                             title=f"{self.display_name(m['i'])} v {self.display_name(m['j'])}"
-                                   f" · repetition {m['r'] + 1}")
+                             title=f"repetition {m['r'] + 1}")   # the names are already on show
 
     # ---------------- layout ----------------
 
     def _layout_content(self, W, H, top, m):
+        """Always the same shape: a list on the left, a panel on the right."""
         view = self.view
-        self.board = None
-        if view == "run":
-            avail = H - top - m
-            self._draw_run_panel(m, top, W - 2 * m, avail * 0.4)
-            self.log_box = (m, top + avail * 0.4 + m / 2, W - 2 * m, avail * 0.6 - m / 2)
-            self._place_log(True)
-            return
-        if view == "explorer":
+        avail = H - top - m
+        if view == "matches":
             lw = W * 0.44
-            self.list_box = (m, top, lw - m / 2, H - m - top)
-            self.card_box = (lw + m / 2, top, W - m - (lw + m / 2), H - m - top)
+            self.board = None
+            self.list_box = (m, top, lw - m / 2, avail)
+            self.card_box = (lw + m / 2, top, W - m - (lw + m / 2), avail)
             self.log_box = (0, 0, 1, 1)
             self._place_log(False)
             self.stages[0].layout(*self.card_box)
@@ -299,20 +333,20 @@ class Arena(BaseApp):
         bw = W * 0.5
         self.board = (m, top, bw - m / 2, H - m)
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
-        avail = H - top - m
-        if view == "bots":
-            self.card_box = (rx, top, rw, avail * 0.64)
-            self.log_box = (rx, top + avail * 0.64 + m / 2, rw, avail * 0.36 - m / 2)
-            self._place_log(True)
-        else:
-            self.card_box = (rx, top, rw, avail)
-            self.log_box = (0, 0, 1, 1)
-            self._place_log(False)
+        show_log = view == "bots"
+        panel_h = avail * (0.64 if show_log else 1.0)
+        self.card_box = (rx, top, rw, panel_h)
+        self.log_box = ((rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2) if show_log
+                        else (0, 0, 1, 1))
+        self._place_log(show_log)
         self._layout_board()
-        if view == "standings":
-            self._draw_details(*self.card_box)
-        elif view == "stats":
-            self._draw_stats(*self.card_box)
+        if view == "results":
+            if self.state == "running":
+                self._draw_run_panel(*self.card_box)
+            elif len(self.selected) >= 2:
+                self._draw_stats(*self.card_box)
+            else:
+                self._draw_details(*self.card_box)
 
     def _place_log(self, visible):
         x, y, w, h = self.log_box
@@ -428,10 +462,11 @@ class Arena(BaseApp):
              DIM, self.f_card_detail),
             ("", FG, self.f_card_detail),
             (verdict, colour, self.f_stage_name),
-            (f"SPRT  llr {c['sprt']['llr']:+.2f}   bounds [{c['sprt']['lower']:.2f}, "
-             f"{c['sprt']['upper']:.2f}]   δ = {delta:g}", DIM, self.f_card_detail),
             (f"resolving {delta:g} a round would take about {c['needed']:,} matches each"
              if c["needed"] else "", DIM, self.f_card_detail),
+            (f"SPRT  llr {c['sprt']['llr']:+.2f}   bounds [{c['sprt']['lower']:.2f}, "
+             f"{c['sprt']['upper']:.2f}]   δ = {delta:g}   ({c['sprt']['n']:,} paired matches)"
+             if self.details_var.get() else "", FAINT, self.f_card_detail),
             ("", FG, self.f_card_detail),
             (f"head to head:  {c['h2h'][0]:.3f}  vs  {c['h2h'][1]:.3f}   over {c['h2h'][2]} matches",
              FG, self.f_card_label),
@@ -483,13 +518,16 @@ class Arena(BaseApp):
     def show_badges(self):
         return self.view == "bots"
 
+    def show_scores(self):
+        return self.view != "bots" or bool(self.tour)
+
     def _draw_overlays(self):
         if self.view == "bots":
             self._draw_card()
 
     def click_row(self, i):
         super().click_row(i)
-        if self.view in ("standings", "stats"):
+        if self.view == "results":
             self.layout()
 
     def _log_breakdown(self, i):
@@ -499,7 +537,7 @@ class Arena(BaseApp):
         super()._finished(ranks, stats)
         if self.run_info.get("out"):
             self._append_log(f"Saved to {self.run_info['out']}", UP)
-        self.show_view("standings")
+        self.show_view("results")
 
     def _advance(self, dt):
         """No live replays while running: results just go onto the standings."""
@@ -509,7 +547,7 @@ class Arena(BaseApp):
             if self.final_stats and self.applied >= self.played:
                 self.finish()
             now = time.perf_counter()
-            if self.view == "run" and now - self._panel_at > 0.5:
+            if self.view == "results" and now - self._panel_at > 0.5:
                 self._panel_at = now          # keep the run panel's counters moving
                 self.layout()
         for st in self.stages:
@@ -528,7 +566,7 @@ class Arena(BaseApp):
                 self.file_var.set(os.path.join(tempfile.gettempdir(), "ipd-tournament.jsonl"))
                 self.log(f"No tournament file chosen; saving to {self.file_var.get()}", DIM)
             self.run_started = time.perf_counter()
-            self.show_view("run")
+            self.show_view("results")
         super().run_or_stop()
 
 

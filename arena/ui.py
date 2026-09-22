@@ -673,6 +673,10 @@ class BaseApp:
         """Whether to mark bots with their protocol-check result."""
         return not self.presenting
 
+    def show_scores(self):
+        """Whether the board has scores to show yet."""
+        return True
+
     def stage_hint(self):
         return "Click two rows on the board, then Watch.\nDuring a run, fresh matches replay here."
 
@@ -867,8 +871,13 @@ class BaseApp:
         cols = self.cols = {
             "rank": x + 44 * s, "arrow": x + 70 * s, "name": x + 90 * s,
             "bar0": x + w * 0.48, "bar1": x + w * 0.80, "score": x + w * 0.82, "coop": x1 - 12 * s}
-        for text, cx, anchor in (("#", cols["rank"], "ne"), ("BOT", cols["name"], "nw"),
-                                 ("POINTS / ROUND", cols["bar0"], "nw"), ("COOP", cols["coop"], "ne")):
+        scored = self.show_scores()
+        for text, cx, anchor, only_scored in (("#", cols["rank"], "ne", True),
+                                              ("BOT", cols["name"], "nw", False),
+                                              ("POINTS / ROUND", cols["bar0"], "nw", True),
+                                              ("COOP", cols["coop"], "ne", True)):
+            if only_scored and not scored:
+                continue
             cv.create_text(cx, y + 4 * s, text=text, anchor=anchor, fill=FAINT, font=self.f_head)
         top = y + 34 * s
         visible = [i for i in self.order() if self.on_board(i)]
@@ -888,7 +897,7 @@ class BaseApp:
             r["arrow"] = cv.create_text(cols["arrow"], ry + rh / 2, fill=UP, font=self.f_row_small, tags=tg)
             r["name"] = cv.create_text(cols["name"], ry + rh / 2, anchor="w", fill=FG,
                                        font=self.f_row if team else self.f_row_small, tags=tg)
-            r["badge"] = cv.create_text(cols["bar0"] - 14 * s, ry + rh / 2, anchor="e", fill=FAINT,
+            r["badge"] = cv.create_text(cols["coop"], ry + rh / 2, anchor="e", fill=FAINT,
                                         font=self.f_badge, tags=tg)
             bh = rh * 0.34
             r["barbg"] = cv.create_rectangle(cols["bar0"], ry + rh / 2 - bh / 2, cols["bar1"],
@@ -1100,8 +1109,8 @@ class BaseApp:
             spec = user_bot_spec(path, name)
             spec["added"] = True
             self.team_specs.append(spec)
-            self.log(f"Added {name}.  Run command: {harness.join_cmd(spec['cmd'])}"
-                     + (f"\n  Build: {harness.join_cmd(spec['build'])}" if spec["build"] else ""), DIM)
+            self.log(f"Added {name} ({os.path.basename(path)})"
+                     + ("  ·  compiled first" if spec["build"] else ""), DIM)
         self._field_changed()
         self.log("Right-click a bot on the board to change its command. Next: Check.", DIM)
 
@@ -1521,11 +1530,13 @@ class BaseApp:
             if team and self.show_badges():
                 status = self.check_status.get(spec["name"])
                 badge = self.BADGES[status] if status else (("not checked", FAINT) if spec.get("added") else badge)
+            scored = self.show_scores() and self.applied
             vals = {
-                "rank": (str(rk) if rk else "·", medal or (FG if team else DIM)),
-                "arrow": (arrow_txt, arrow_col),
-                "score": (f"{sc:.3f}" if self.applied else "—", FG if team else DIM),
-                "coop": (f"{self.coop[i] / self.moves[i]:.0%}" if self.moves[i] else "", DIM),
+                "rank": (str(rk) if rk and scored else ("·" if scored else ""),
+                         medal or (FG if team else DIM)),
+                "arrow": (arrow_txt if scored else "", arrow_col),
+                "score": (f"{sc:.3f}" if scored else "", FG if team else DIM),
+                "coop": (f"{self.coop[i] / self.moves[i]:.0%}" if scored and self.moves[i] else "", DIM),
                 "name": (self.display_name(i), FG if team else DIM),
                 "badge": badge,
             }
@@ -1534,7 +1545,12 @@ class BaseApp:
                     cv.itemconfig(r[key], text=text, fill=col)
                     r["cache"][key] = (text, col)
             b0, b1 = self.cols["bar0"], self.cols["bar1"]
-            bx = b0 + (b1 - b0) * (sc / (top * 1.02))
+            bx = b0 + (b1 - b0) * (sc / (top * 1.02)) if scored else b0
+            if r["cache"].get("barbg") != scored:
+                state = "normal" if scored else "hidden"
+                cv.itemconfig(r["barbg"], state=state)
+                cv.itemconfig(r["bar"], state=state)
+                r["cache"]["barbg"] = scored
             if r["cache"].get("bar") != int(bx):
                 c = cv.coords(r["bar"])
                 cv.coords(r["bar"], b0, c[1], bx, c[3])
