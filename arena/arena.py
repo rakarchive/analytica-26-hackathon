@@ -26,6 +26,7 @@ from tkinter import font as tkfont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import game  # noqa: E402
+import games  # noqa: E402
 import harness  # noqa: E402
 import stats as stat  # noqa: E402
 from ui import *  # noqa: E402,F401,F403
@@ -42,7 +43,7 @@ class Arena(BaseApp):
     """The match runner: teams test their bot with it, the organizer plays the
     tournament with it and saves the file the show is made from."""
 
-    TITLE = "IPD Arena"
+    TITLE = "Arena"
 
     def __init__(self, root):
         self.view = "bots"
@@ -505,7 +506,8 @@ class Arena(BaseApp):
             cv.create_text(tx, yy + rh / 2, anchor="w", fill=FG, font=f, tags=("panel", tag),
                            text=f"{self.display_name(mt['i'])} v {self.display_name(mt['j'])}")
             cv.create_text(x + w - 24 * s, yy + rh / 2, anchor="e", font=f, tags=("panel", tag),
-                           fill={"coop": UP, "lock": DOWN, "take": WARN}.get(kind, DIM),
+                           fill={"up": UP, "down": DOWN, "warn": WARN}.get(
+                               harness.GAME.kind_colour.get(kind, "dim"), DIM),
                            text=f"{a:.2f} – {b:.2f}   {kind}")
             cv.tag_bind(tag, "<Button-1>", lambda e, mm=mt: self.open_match(mm))
         shown = min(len(self.explorer_rows), self.explorer_top + fit)
@@ -571,10 +573,11 @@ class Arena(BaseApp):
 
 
 SELFTEST_BOT = """import sys
+FIRST = "{first}"
 for line in sys.stdin:
     p = line.split()
     if p and p[0] == "ROUND":
-        print("C" if p[1] == "-" else p[2], flush=True)
+        print(FIRST if p[1] == "-" else p[2], flush=True)   # copy the opponent
     elif p and p[0] == "END":
         break
 """
@@ -588,16 +591,16 @@ def selftest(report_path):
     try:
         folder = tempfile.mkdtemp()
         with open(os.path.join(folder, "selftest_bot.py"), "w") as f:
-            f.write(SELFTEST_BOT)
+            f.write(SELFTEST_BOT.format(first=harness.GAME.moves[0]))
         bot = user_bot_spec(os.path.join(folder, "selftest_bot.py"), "selftest_bot")
-        lines.append(f"python: {bot['cmd'][0]}")
+        lines.append(f"game: {harness.GAME.key} · python: {bot['cmd'][0]}")
         specs = [bot] + baseline_specs()
         points, rounds, stats = harness.run_round_robin(specs, 2, seed=1, workers=2, log_dir=folder)
         st = stats[0].summary()
         per_round = sum(points[0]) / max(1, sum(rounds[0]))
         lines.append(f"selftest_bot: {per_round:.3f} pts/round, {st['moves']} moves, "
                      f"{st['timeouts']} timeouts, {st['crashes']} crashes")
-        ok = st["moves"] > 0 and not st["crashes"] and not st["timeouts"] and per_round > 1
+        ok = st["moves"] > 0 and not st["crashes"] and not st["timeouts"] and per_round > 0
     except Exception:
         lines.append(traceback.format_exc())
     lines.append("PASS" if ok else "FAIL")
@@ -610,6 +613,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("tournament", nargs="?", help="a tournament file to open")
+    ap.add_argument("--game", choices=games.names(), help="which game to play (default: see game.txt)")
     ap.add_argument("--teams", metavar="MANIFEST", help="load a field of bots from a manifest")
     ap.add_argument("--house", metavar="PY", help="load house bots from a Python file")
     ap.add_argument("--reps", type=int, help="matches per pairing")
@@ -625,6 +629,8 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.abspath(args.run_bot)))
         runpy.run_path(args.run_bot, run_name="__main__")
         return
+    if args.game:
+        harness.set_game(args.game)
     if args.selftest:
         sys.exit(selftest(args.selftest))
     adopt_portable_tools()

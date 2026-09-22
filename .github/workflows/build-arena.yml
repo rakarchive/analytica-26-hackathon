@@ -53,20 +53,43 @@ jobs:
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { throw "Arena.exe self-test failed (exit $($p.ExitCode))" }
 
-      - name: Assemble the download
+      - name: Assemble the downloads
+        # Two packs from the one exe: the practice one plays rock-paper-scissors
+        # (a game.txt beside the exe says so) and is the one teams get early.
         run: |
-          New-Item -ItemType Directory -Force package | Out-Null
+          New-Item -ItemType Directory -Force package, practice | Out-Null
           Copy-Item dist\Arena.exe, ..\starter\README.md package\
           Copy-Item -Recurse ..\starter\templates package\templates
           Compress-Archive -Path package\* -DestinationPath IPD-Arena.zip -Force
+          Copy-Item dist\Arena.exe practice\
+          Copy-Item ..\starter\practice\README.md practice\
+          Copy-Item -Recurse ..\starter\practice\templates practice\templates
+          "rps" | Set-Content practice\game.txt
+          Compress-Archive -Path practice\* -DestinationPath Arena-Practice.zip -Force
+
+      - name: Check the practice pack plays the practice game
+        run: |
+          $p = Start-Process -FilePath practice\Arena.exe -ArgumentList '--selftest', 'practice.txt' -Wait -PassThru
+          Get-Content practice.txt
+          if ($p.ExitCode -ne 0) { throw "practice pack self-test failed" }
+          if (-not (Select-String -Path practice.txt -Pattern "game: rps")) {
+            throw "the practice pack is not playing rock-paper-scissors"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: IPD-Arena
           path: arena/package/
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Arena-Practice
+          path: arena/practice/
+
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: arena/IPD-Arena.zip
+          files: |
+            arena/IPD-Arena.zip
+            arena/Arena-Practice.zip

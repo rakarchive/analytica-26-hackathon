@@ -44,14 +44,14 @@ from tkinter import font as tkfont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import harness  # noqa: E402
-from game import (MAX_REPLAYS_PER_PAIR, PAST, WORD, actual, headline,  # noqa: E402,F401
-                  match_story, new_story, verdict)
-from baselines import BASELINES  # noqa: E402
+from game import (MAX_REPLAYS_PER_PAIR, actual, headline, intent_of,  # noqa: E402,F401
+                  match_story, new_story, past, verdict, word)
+
 
 BG, PANEL, PANEL2, LINE = "#0e1218", "#161c26", "#1b2230", "#2a3344"
 SELECT = "#26344d"
 FG, DIM, FAINT = "#eef1f6", "#8d97a8", "#4b5566"
-C_COL, D_COL, FORFEIT_COL = "#3fbf72", "#e5534b", "#596274"
+FORFEIT_COL = "#596274"
 MEDALS = {1: "#f5c542", 2: "#c9d1dc"}         # only the top two are winners
 MEDAL_BG = {1: "#3b321a", 2: "#2c3444"}       # their rows on the board
 UP, DOWN, GLOW, WARN, ACCENT = "#4fd18b", "#ff6b61", "#ffd34d", "#ffb35c", "#5b8def"
@@ -172,8 +172,13 @@ def user_bot_spec(path, name):
 
 
 def baseline_specs():
-    return [{"name": c.name, "kind": "baseline", "strategy": ("baselines", c.__name__, {})}
-            for c in BASELINES]
+    """The sparring partners of whichever game is in force."""
+    import importlib
+    out = []
+    for module, cls_name in harness.GAME.baselines:
+        cls = getattr(importlib.import_module(module), cls_name)
+        out.append({"name": cls.name, "kind": "baseline", "strategy": (module, cls_name, {})})
+    return out
 
 
 def build(spec):
@@ -262,7 +267,7 @@ class Stage:
         # the stage allows (a tall single viewer fits fewer, bigger squares).
         best = None
         for per in (20, 25, 30, 40, 50):
-            bands = -(-harness.MAX_ROUNDS // per)
+            bands = -(-harness.GAME.rounds[1] // per)
             cell = min((w - 44 * s) / per, (grid_h - 120 * s) / (bands * 2.7))
             if best is None or cell > best[0]:
                 best = (cell, per)
@@ -355,7 +360,7 @@ class Stage:
         c = self.cell
         tags = (self.tag, self.tag + "dyn")
         for ch, y in ((ma[t], ya), (mb[t], yb)):
-            color = FORFEIT_COL if ch == "#" else (C_COL if actual(ch) == "C" else D_COL)
+            color = FORFEIT_COL if ch == "#" else harness.GAME.colour[actual(ch)]
             r = self.cv.create_rectangle(x + 1, y, x + c - 1, y + c - 1, fill=color, width=0, tags=tags)
             self.cellmap[r] = t
             if ch.islower():
@@ -393,7 +398,7 @@ class Stage:
         while self.drawn < int(self.pos):
             t = self.drawn
             self._draw_cell(t, glow=True)
-            sa, sb = harness.PAYOFF[actual(ma[t]), actual(mb[t])]
+            sa, sb = harness.GAME.payoff[actual(ma[t]), actual(mb[t])]
             self.run_a += 0 if ma[t] == "#" else sa
             self.run_b += 0 if mb[t] == "#" else sb
             self.flips += ma[t].islower() + mb[t].islower()
@@ -438,10 +443,11 @@ class Stage:
             if ch == "#":
                 parts.append(f"{name} forfeited")
             elif ch.islower():
-                parts.append(f"{name} tried to {WORD[harness.FLIP[ch.upper()]]}; noise made it "
-                             f"{'cooperation' if ch.upper() == 'C' else 'a defection'}")
+                meant = intent_of(ch.upper())
+                parts.append(f"{name} tried to {word(meant)}; noise made it {past(ch.upper())}"
+                             if meant else f"noise made {name} {past(ch.upper())}")
             else:
-                parts.append(f"{name} {PAST[ch]}")
+                parts.append(f"{name} {past(ch)}")
         return f"Round {t + 1}: " + "  ·  ".join(parts)
 
     def _draw_verdict(self):
@@ -845,7 +851,7 @@ class BaseApp:
         self.rows = {}
         m = 28 * s
         self.m = m
-        cv.create_text(m, 20 * s, text="NOISY PRISONER'S DILEMMA", anchor="nw", fill=FG, font=self.f_title)
+        cv.create_text(m, 20 * s, text=harness.GAME.title, anchor="nw", fill=FG, font=self.f_title)
         self.status = cv.create_text(W - m, 30 * s, text="", anchor="ne", fill=DIM, font=self.f_status)
         self.bar_box = (m, 82 * s, W - m, 92 * s)
         cv.create_rectangle(*self.bar_box, fill=PANEL2, width=0)
@@ -872,10 +878,11 @@ class BaseApp:
             "rank": x + 44 * s, "arrow": x + 70 * s, "name": x + 90 * s,
             "bar0": x + w * 0.48, "bar1": x + w * 0.80, "score": x + w * 0.82, "coop": x1 - 12 * s}
         scored = self.show_scores()
+        stat_name = harness.GAME.stat[0] if harness.GAME.stat else ""
         for text, cx, anchor, only_scored in (("#", cols["rank"], "ne", True),
                                               ("BOT", cols["name"], "nw", False),
                                               ("POINTS / ROUND", cols["bar0"], "nw", True),
-                                              ("COOP", cols["coop"], "ne", True)):
+                                              (stat_name, cols["coop"], "ne", True)):
             if only_scored and not scored:
                 continue
             cv.create_text(cx, y + 4 * s, text=text, anchor=anchor, fill=FAINT, font=self.f_head)
@@ -1372,7 +1379,9 @@ class BaseApp:
             k = 0 if self.specs[other]["kind"] == "team" else 1
             self.pts[me][k] += p
             self.rnds[me][k] += n
-            self.coop[me] += sum(1 for ch in mv if ch in "Cc")
+            if harness.GAME.stat:
+                counted = harness.GAME.stat[1]
+                self.coop[me] += sum(1 for ch in mv if ch.upper() in counted)
             self.moves[me] += n
             if "#" in mv and self.specs[me]["kind"] == "team" and me not in self.forfeit_reported:
                 self.forfeit_reported.add(me)

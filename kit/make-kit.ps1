@@ -34,7 +34,9 @@ param(
     [string]$MingwUrl = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0posix-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r2.zip",
     [switch]$TrimJdk,        # jlink a smaller JDK (still has javac): ~80 MB instead of ~300 MB
     [switch]$SkipMingw,      # leave C++ out
-    [switch]$CheckOnly       # just check the downloads are reachable, build nothing
+    [switch]$CheckOnly,      # just check the downloads are reachable, build nothing
+    [ValidateSet("ipd", "rps")]
+    [string]$Game = "ipd"    # rps builds the practice kit teams get beforehand
 )
 
 $ErrorActionPreference = "Stop"
@@ -144,10 +146,17 @@ if (Test-Path $Arena) {
 } else {
     Write-Warning "Arena.exe not found at $Arena - copy it into $kit yourself (see the build workflow)"
 }
-Copy-Item (Join-Path $root "..\starter\README.md") (Join-Path $kit "README-protocol.md") -Force
+$pack = if ($Game -eq "rps") { "..\starter\practice" } else { "..\starter" }
+Copy-Item (Join-Path $root "$pack\README.md") (Join-Path $kit "README-protocol.md") -Force
 $templates = Join-Path $kit "templates"
 if (Test-Path $templates) { Remove-Item -Recurse -Force $templates }
-Copy-Item -Recurse (Join-Path $root "..\starter\templates") $templates
+Copy-Item -Recurse (Join-Path $root "$pack\templates") $templates
+if ($Game -eq "rps") {
+    # A game.txt beside the exe is what makes it the practice build.
+    "rps" | Set-Content (Join-Path $kit "game.txt")
+} elseif (Test-Path (Join-Path $kit "game.txt")) {
+    Remove-Item (Join-Path $kit "game.txt")
+}
 
 # Licences, kept where people can find them
 $licenses = Join-Path $tools "licenses"

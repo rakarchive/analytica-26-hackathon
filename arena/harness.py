@@ -26,12 +26,17 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-C, D = "C", "D"
-FLIP = {C: D, D: C}
-PAYOFF = {(C, C): (3, 3), (C, D): (0, 5), (D, C): (5, 0), (D, D): (1, 1)}
+import games
 
-NOISE = 0.07             # chance each player's move is flipped, independently
-MIN_ROUNDS, MAX_ROUNDS = 150, 250
+GAME = games.current()   # the rules in force; see games/ and set_game()
+
+
+def set_game(key):
+    """Switch games. Worker processes are told which game to play, so this is
+    the only thing that has to travel with a run."""
+    global GAME
+    GAME = games.use(key)
+    return GAME
 MOVE_TIMEOUT = 0.050     # hard per-move limit; overrun forfeits the round (see play_match)
 STARTUP_TIMEOUT = 10.0   # allowance for the first reply after (re)start: JVM etc.
 WINDOWS = sys.platform == "win32"
@@ -87,7 +92,7 @@ class BotStats:
     timeouts: int = 0
     junk_lines: int = 0   # non-move lines on stdout (debug prints etc.)
     crashes: int = 0
-    forfeits: int = 0     # rounds played as D because the bot was dead
+    forfeits: int = 0     # rounds it was dead for, played as the forfeit move
     disabled: bool = False
     latencies: list = field(default_factory=list)
     loaded: dict = None          # set when read back from a tournament file
@@ -217,7 +222,7 @@ class ProcessPlayer:
             return False
 
     def _read_move(self, deadline):
-        """Next C/D line that ARRIVED before the deadline (arrival is stamped by
+        """Next move line that ARRIVED before the deadline (arrival is stamped by
         the reader thread, so time spent waiting on the other bot doesn't count).
         Returns (move | "timeout" | "eof", arrival time). Non-move lines, such
         as debug prints on stdout, are skipped."""
@@ -229,7 +234,7 @@ class ProcessPlayer:
             if line is None:
                 return "eof", at
             m = line.strip().upper()
-            if m in (C, D):
+            if m in GAME.moves:
                 if at > deadline:
                     # Arrived late, and we have now consumed it: nothing is owed.
                     self.stats.latencies.append(at - self._sent_at)
@@ -241,7 +246,7 @@ class ProcessPlayer:
     def _settle_late(self):
         """Swallow the reply we gave up on, so the stream stays in sync."""
         got, at = self._read_move(time.perf_counter() + LATE_GRACE)
-        if got in (C, D, "late"):
+        if got in GAME.moves or got == "late":
             if got != "late":
                 self.stats.latencies.append(at - self._sent_at)
             self._late = False
@@ -293,16 +298,16 @@ class ProcessPlayer:
         self.stats.moves += 1
         if self._dead:
             self.stats.forfeits += 1
-            return D, "dead"
+            return GAME.forfeit, "dead"
         limit = self.startup_timeout if self._fresh else self.move_timeout
         got, at = self._read_move(self._sent_at + limit)
         if got in ("timeout", "late"):
             self.stats.timeouts += 1
             self._late = got == "timeout"
-            return D, "timeout"
+            return GAME.forfeit, "timeout"
         if got == "eof":
             self._crash("exited mid-match")
-            return D, "crash"
+            return GAME.forfeit, "crash"
         if self._fresh:
             self._fresh, self._failed_starts = False, 0
         else:
@@ -324,12 +329,17 @@ class ProcessPlayer:
 # --------------------------------------------------------------------------
 
 def match_plan(seed, rep):
-    """Length and noise flips for repetition `rep`. Every pairing uses the
-    same plan for a given rep (common random numbers), so differences between
-    bots come from strategy, not from who drew the unlucky noise."""
+    """Length and noise for repetition `rep`: per round and side, either None
+    or the move it comes out as instead. Every pairing uses the same plan for
+    a given rep (common random numbers), so differences between bots come from
+    strategy, not from who drew the unlucky noise."""
     rng = random.Random(f"plan:{seed}:{rep}")
-    rounds = rng.randint(MIN_ROUNDS, MAX_ROUNDS)
-    flips = [(rng.random() < NOISE, rng.random() < NOISE) for _ in range(rounds)]
+    lo, hi = GAME.rounds
+    rounds = rng.randint(lo, hi)
+    flips = []
+    for _ in range(rounds):
+        flips.append(tuple(rng.choice(GAME.moves) if rng.random() < GAME.noise else None
+                           for _ in range(2)))
     return rounds, flips
 
 
@@ -345,22 +355,26 @@ def play_match(a, b, flips, seed_a=None, seed_b=None, record=None):
     b.reset(seed_b)
     last_a = last_b = None
     pa = pb = 0
-    for flip_a, flip_b in flips:
+    for alt_a, alt_b in flips:
         # Ask both before waiting on either, so their think time overlaps.
         a.request(last_a, last_b)
         b.request(last_b, last_a)
         ma, status_a = a.response()
         mb, status_b = b.response()
+        if alt_a and alt_a != ma:
+            ma = alt_a          # noise: it comes out as something else
+        else:
+            alt_a = None
+        if alt_b and alt_b != mb:
+            mb = alt_b
+        else:
+            alt_b = None
         if record is not None:
-            record.append((ma, mb, flip_a, flip_b, status_a, status_b))
-        if flip_a:
-            ma = FLIP[ma]
-        if flip_b:
-            mb = FLIP[mb]
-        sa, sb = PAYOFF[ma, mb]
-        # A forfeited round (timeout, crash, dead bot) is played as D for the
-        # opponent's benefit but scores 0 for the forfeiter. Otherwise a broken
-        # bot is just always-defect, which can rank highly.
+            record.append((ma, mb, alt_a is not None, alt_b is not None, status_a, status_b))
+        sa, sb = GAME.payoff[ma, mb]
+        # A forfeited round (timeout, crash, dead bot) still gives the opponent
+        # a real move to play against, but scores 0 for the forfeiter. Otherwise
+        # a broken bot is just a bot that always plays the forfeit move.
         pa += sa if status_a == "ok" else 0
         pb += sb if status_b == "ok" else 0
         last_a, last_b = ma, mb
@@ -368,17 +382,13 @@ def play_match(a, b, flips, seed_a=None, seed_b=None, record=None):
 
 
 def encode_record(record):
-    """Compact per-side move strings for streaming a match to a display:
-    'C'/'D' actual move, lowercase if noise flipped it, '#' if forfeited."""
+    """Compact per-side move strings for replaying a match: the move as it
+    came out, lowercase if noise changed it, '#' if the bot forfeited."""
     def side(k):
         out = []
         for r in record:
-            intent, flipped, status = r[k], r[2 + k], r[4 + k]
-            if status != "ok":
-                out.append("#")
-            else:
-                m = FLIP[intent] if flipped else intent
-                out.append(m.lower() if flipped else m)
+            move, changed, status = r[k], r[2 + k], r[4 + k]
+            out.append("#" if status != "ok" else (move.lower() if changed else move))
         return "".join(out)
     return side(0), side(1)
 
@@ -441,7 +451,7 @@ def smoke_test(cmd, cwd=None, rounds=200):
 
 
 def _smoke(cmd, cwd, rounds, stderr):
-    from baselines import AlwaysDefect, RandomBot, TitForTat
+    import importlib
 
     checks = []
     bot = ProcessPlayer("bot", cmd, cwd=cwd, stderr=stderr)
@@ -465,12 +475,13 @@ def _smoke(cmd, cwd, rounds, stderr):
         checks.append(Check("fail", "Replies to its first move", f"crashed: {bot.last_error}"))
         return checks, False, bot.stats
     checks.append(Check("ok", "Starts and replies",
-                        f"first move: {'cooperated' if move == C else 'defected'}, "
+                        f"first move: {GAME.past[move]}, "
                         f"after {(time.perf_counter() - t0) * 1000:.0f} ms"))
 
     # 2. A few real matches, each preceded by RESET.
     ok = True
-    for k, opp_cls in enumerate((TitForTat, AlwaysDefect, RandomBot)):
+    for k, (module, cls_name) in enumerate(GAME.smoke):
+        opp_cls = getattr(importlib.import_module(module), cls_name)
         opp = LocalPlayer(opp_cls.name, opp_cls())
         before = BotStats()
         before.merge(bot.stats)
@@ -598,11 +609,12 @@ class TournamentFile:
 
     @staticmethod
     def header(specs, reps, seed, self_play):
-        return {"type": "header", "version": TournamentFile.VERSION,
+        return {"type": "header", "version": TournamentFile.VERSION, "game": GAME.key,
                 "bots": [{"name": s["name"], "kind": s["kind"]} for s in specs],
                 "reps": reps, "seed": seed, "self_play": bool(self_play),
-                "noise": NOISE, "payoff": {f"{a}{b}": list(v) for (a, b), v in PAYOFF.items()},
-                "rounds": [MIN_ROUNDS, MAX_ROUNDS],
+                "noise": GAME.noise,
+                "payoff": {f"{a}{b}": list(v) for (a, b), v in GAME.payoff.items()},
+                "rounds": list(GAME.rounds),
                 "started": time.strftime("%Y-%m-%d %H:%M:%S")}
 
     @classmethod
@@ -681,7 +693,7 @@ class Tournament:
         self.reps = header["reps"]
         self.seed = header["seed"]
         self.self_play = header["self_play"]
-        self.noise = header.get("noise", NOISE)
+        self.noise = header.get("noise", GAME.noise)
 
     def __len__(self):
         return len(self.matches)
@@ -745,7 +757,7 @@ class Tournament:
 def projected_seconds(mean_latencies, n_bots, reps, workers):
     """Rough run time from measured per-move latency (seconds): every move
     is a round trip a worker waits on, plus ~20 us/round of plumbing."""
-    moves_per_bot = (n_bots - 1) * reps * (MIN_ROUNDS + MAX_ROUNDS) / 2
+    moves_per_bot = (n_bots - 1) * reps * sum(GAME.rounds) / 2
     base = n_bots * (n_bots - 1) / 2 * reps * 200 * 20e-6
     return (base + sum(mean_latencies) * moves_per_bot) / max(1, workers)
 
@@ -775,7 +787,8 @@ def make_player(spec, slot=0, log_dir=None, worker=0):
                          move_timeout=spec.get("move_timeout", MOVE_TIMEOUT))
 
 
-def _worker(specs, seed, tasks, results, log_dir, worker, stream_moves):
+def _worker(specs, seed, tasks, results, log_dir, worker, stream_moves, game_key):
+    set_game(game_key)          # a spawned worker starts with the default game
     players = {}
 
     def get(i, slot):
@@ -834,7 +847,7 @@ def run_round_robin(specs, reps, seed=0, workers=1, self_play=False,
     ctx = mp.get_context("spawn")
     tasks, results = ctx.Queue(), ctx.Queue()
     procs = [ctx.Process(target=_worker,
-                         args=(specs, seed, tasks, results, log_dir, w, on_match is not None),
+                         args=(specs, seed, tasks, results, log_dir, w, on_match is not None, GAME.key),
                          daemon=False) for w in range(workers)]
     for p in procs:
         p.start()
