@@ -1,0 +1,9 @@
+{"bots": [
+  {"name": "py-template", "dir": "../starter/templates/python", "run": "python3 my_bot.py"},
+  {"name": "noflush", "dir": "testbots", "run": "python3 noflush.py"},
+  {"name": "slow", "dir": "testbots", "run": "python3 slow.py"},
+  {"name": "crashy", "dir": "testbots", "run": "python3 crashy.py"},
+  {"name": "chatty", "dir": "testbots", "run": "python3 chatty.py"},
+  {"name": "broken", "dir": "testbots", "run": "python3 broken.py"},
+  {"name": "missing-cmd", "dir": "testbots", "run": "no_such_binary"}
+]}
