@@ -1,0 +1,72 @@
+name: Build Arena
+
+# Builds arena/ into a single Windows exe, checks that the packaged build can
+# actually run a tournament, and publishes the participants' download:
+# Arena.exe plus the starter pack (README + bot templates). Tag a commit v*
+# to attach it to a GitHub release.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "arena/**"
+      - "starter/**"
+      - ".github/workflows/build-arena.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # only used to attach the zip to a release on v* tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: arena
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: python -m pip install "pyinstaller==6.*"
+
+      - name: Build Arena.exe
+        # baselines and harness are imported dynamically by the tournament
+        # worker processes, so name them explicitly.
+        run: >
+          pyinstaller --onefile --windowed --name Arena
+          --hidden-import baselines --hidden-import harness
+          arena.py
+
+      - name: Self-test the packaged exe
+        # Runs a small tournament headlessly: exercises the frozen worker
+        # processes and a real Python bot over the protocol. A windowed exe
+        # has no console, so the result comes back through a report file.
+        timeout-minutes: 5
+        run: |
+          $p = Start-Process -FilePath dist\Arena.exe -ArgumentList '--selftest', 'selftest.txt' -Wait -PassThru
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw "Arena.exe self-test failed (exit $($p.ExitCode))" }
+
+      - name: Assemble the download
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item dist\Arena.exe, ..\starter\README.md package\
+          Copy-Item -Recurse ..\starter\templates package\templates
+          Compress-Archive -Path package\* -DestinationPath IPD-Arena.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IPD-Arena
+          path: arena/package/
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: arena/IPD-Arena.zip

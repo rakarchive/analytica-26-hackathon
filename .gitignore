@@ -1,0 +1,19 @@
+# Organizer material (house bots, simulations, results) must never be pushed:
+# the seeded field is supposed to stay secret.
+organizer/
+
+__pycache__/
+.DS_Store
+arena/build/
+arena/dist/
+arena/package/
+arena/*.spec
+arena/IPD-Arena.zip
+arena/selftest.txt
+
+# Flash-drive kit: downloads and the assembled folder
+kit/.cache/
+IPD-Kit/
+
+# Not part of the project
+output.mp4
