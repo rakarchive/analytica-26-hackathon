@@ -986,7 +986,7 @@ class BaseApp:
         elif rep is not None:
             rows = [(k.status, k.label, k.detail) for k in rep.checks if k.label != "Speed"]
         elif c["state"] == "running":
-            rows = [("wait", "Running the bot against tit-for-tat, always-defect and random…", "")]
+            rows = [("wait", "Playing it against the sparring partners…", "")]
 
         cy = y + 104 * s
         r = 13 * s

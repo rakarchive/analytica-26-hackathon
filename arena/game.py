@@ -1,6 +1,6 @@
 """What happened in a match, in words: the verdict, and the captions that
 describe how it went. Both come from whichever game is in force, so the same
-code reads a prisoner's dilemma match and a rock-paper-scissors one."""
+code reads a match of whichever game is being played."""
 
 import harness
 

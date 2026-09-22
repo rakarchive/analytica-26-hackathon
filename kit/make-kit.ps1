@@ -36,7 +36,9 @@ param(
     [switch]$SkipMingw,      # leave C++ out
     [switch]$CheckOnly,      # just check the downloads are reachable, build nothing
     [ValidateSet("ipd", "rps")]
-    [string]$Game = "ipd"    # rps builds the practice kit teams get beforehand
+    # rps builds the practice kit teams get beforehand; pass -Arena the
+    # practice exe from the build (it has no trace of the real game in it).
+    [string]$Game = "ipd"
 )
 
 $ErrorActionPreference = "Stop"

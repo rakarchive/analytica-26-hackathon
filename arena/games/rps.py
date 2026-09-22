@@ -1,7 +1,7 @@
 """Rock, paper, scissors: the practice game.
 
 Same plumbing as the real thing, deliberately nothing else. It is zero-sum
-with no cooperation to find, so what you learn here is how to talk to the
+and there is no hidden depth to it: what you learn here is how to talk to the
 Arena: one move per line, flushed, on time. Noise scrambles some moves on the
 way out, exactly as it will in the real game, which is why each round tells
 you what your own move actually came out as.

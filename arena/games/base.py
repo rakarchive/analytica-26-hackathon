@@ -12,7 +12,7 @@ class Game:
     noise        chance that a move comes out as a different one
     rounds       (fewest, most) rounds in a match, drawn per repetition
     colour       {move: colour on screen}
-    verb/past    {move: "cooperate"} / {move: "cooperated"}, for captions
+    verb/past    {move: "play rock"} / {move: "played rock"}, for captions
     stat         (column heading, {moves counted}) for the board, or None
     baselines    strategy classes to spar against, as (module, class) names
     smoke        three of those, used by the protocol check

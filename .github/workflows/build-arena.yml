@@ -53,19 +53,39 @@ jobs:
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { throw "Arena.exe self-test failed (exit $($p.ExitCode))" }
 
+      - name: Build the practice exe
+        # A separate binary that does not contain the real game at all: with
+        # games.ipd and the baselines left out there is nothing to find in it,
+        # by flag, by strings, or by unpacking.
+        run: >
+          pyinstaller --onefile --windowed --name ArenaPractice
+          --exclude-module games.ipd --exclude-module baselines
+          --hidden-import rps_bots --hidden-import harness
+          arena.py
+
       - name: Assemble the downloads
-        # Two packs from the one exe: the practice one plays rock-paper-scissors
-        # (a game.txt beside the exe says so) and is the one teams get early.
         run: |
           New-Item -ItemType Directory -Force package, practice | Out-Null
           Copy-Item dist\Arena.exe, ..\starter\README.md package\
           Copy-Item -Recurse ..\starter\templates package\templates
           Compress-Archive -Path package\* -DestinationPath IPD-Arena.zip -Force
-          Copy-Item dist\Arena.exe practice\
+          Copy-Item dist\ArenaPractice.exe practice\Arena.exe
           Copy-Item ..\starter\practice\README.md practice\
           Copy-Item -Recurse ..\starter\practice\templates practice\templates
           "rps" | Set-Content practice\game.txt
           Compress-Archive -Path practice\* -DestinationPath Arena-Practice.zip -Force
+
+      - name: The practice pack must not give the real game away
+        run: |
+          $bytes = [IO.File]::ReadAllBytes("practice\Arena.exe")
+          $text = [Text.Encoding]::ASCII.GetString($bytes)
+          $leaks = @()
+          foreach ($word in "prisoner", "cooperat", "tit_for_tat", "generous_tft", "always_defect",
+                            "grudger", "pavlov", "games.ipd") {
+            if ($text -match [regex]::Escape($word)) { $leaks += $word }
+          }
+          if ($leaks.Count) { throw "the practice exe contains: $($leaks -join ', ')" }
+          Write-Host "nothing in the practice exe names the real game"
 
       - name: Check the practice pack plays the practice game
         run: |

@@ -42,8 +42,8 @@ def current():
 
 def default_key():
     """Which game to start in: a `game.txt` beside the app wins, then the
-    IPD_GAME environment variable, then the prisoner's dilemma. The practice
-    build ships a game.txt saying `rps`."""
+    IPD_GAME environment variable, then whichever game is bundled. The
+    practice build ships a game.txt saying `rps`."""
     home = os.path.dirname(sys.executable if getattr(sys, "frozen", False)
                            else os.path.dirname(os.path.abspath(__file__)))
     marker = os.path.join(home, "game.txt")
@@ -57,4 +57,11 @@ def default_key():
     return os.environ.get("IPD_GAME", "ipd" if "ipd" in _GAMES else names()[0])
 
 
-from games import ipd, rps  # noqa: E402,F401  (registers them)
+# Each game registers itself. A build can leave one out (the practice build
+# ships without the real game, so nothing in it can give the game away), so a
+# missing module is not an error.
+for _name in ("ipd", "rps"):
+    try:
+        __import__(f"games.{_name}")
+    except ImportError:  # not bundled in this build
+        pass

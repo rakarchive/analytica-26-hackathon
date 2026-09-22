@@ -1,4 +1,4 @@
-"""Noisy Iterated Prisoner's Dilemma: match engine and bot plumbing.
+"""The match engine and bot plumbing.
 
 Two kinds of player share one interface:
 
