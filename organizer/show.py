@@ -17,6 +17,7 @@ Keys:  SPACE start/pause · → next · H house bot names · L log · Esc leave
 """
 
 import argparse
+import json
 import os
 import sys
 import time
@@ -30,7 +31,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "arena"))
 import finder  # noqa: E402
 import harness  # noqa: E402
 from ui import *  # noqa: E402,F401,F403
-from ui import (BG, DIM, DOWN, FAINT, FG, LINE, MEDALS, PANEL, PANEL2, UP, WARN,  # noqa: E402
+from ui import (BG, DIM, DOWN, FAINT, FG, GLOW, LINE, MEDALS, PANEL, PANEL2, UP, WARN,  # noqa: E402
                 BaseApp, FlatButton, Stage)
 
 
@@ -59,6 +60,9 @@ class Show(BaseApp):
         self.budget = 0.0
         self.champion_pending = None
         self._panel_at = 0.0
+        self.champ_index = None
+        self.picks_path = None     # curated highlights, if any
+        self.notes = {}            # bot name -> what it plays, one line
         self.top2, self.top2_cand = None, (None, 0.0)
         super().__init__(root)
         for key, fn in (("<space>", self.space), ("<Right>", self.advance), ("<Return>", self.advance),
@@ -73,6 +77,8 @@ class Show(BaseApp):
         f = tk.Frame(tb, bg=BG)
         f.pack(fill="x")
         FlatButton(f, "Open tournament…", self.open_dialog).pack(side="left", padx=(0, 8))
+        FlatButton(f, "Highlights…", self.open_picks_dialog).pack(side="left", padx=(0, 8))
+        FlatButton(f, "Strategy notes…", self.open_notes_dialog).pack(side="left", padx=(0, 8))
         self.buttons["start"] = FlatButton(f, "▶  Present", self.start, primary=True)
         self.buttons["start"].pack(side="left", padx=(0, 12))
         self.hint = self._label(f, "Open a tournament file saved by the Arena.", FAINT)
@@ -85,6 +91,61 @@ class Show(BaseApp):
     def settings(self):
         return {"seed": None, "workers": 1, "self_play": False, "ref_weight": 1.0,
                 "out": "", "show_minutes": 0.0, "stage_speed": 40.0}
+
+    def open_picks_dialog(self):
+        """Curated highlights: which matches to show, with the words to go
+        with them. Without one, the show picks its own."""
+        path = filedialog.askopenfilename(title="Open curated highlights",
+                                          filetypes=[("Highlights", "*.json"), ("All files", "*.*")])
+        if path:
+            self.picks_path = path
+            if self.tour:
+                self._pick_highlights()
+                self.layout()
+
+    def open_notes_dialog(self):
+        path = filedialog.askopenfilename(title="Open strategy notes",
+                                          filetypes=[("Notes", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            self.notes = {k: (v if isinstance(v, str) else v.get("label", ""))
+                          for k, v in (data.get("bots", data)).items()}
+        except (OSError, ValueError, AttributeError) as e:
+            self.log(f"Could not read {os.path.basename(path)}: {e}", DOWN)
+            return
+        self.log(f"Strategy notes for {len(self.notes)} bots.", UP)
+        self.layout()
+
+    def _pick_highlights(self):
+        """Curated highlights if a file was given, otherwise the finder's."""
+        auto = finder.find_highlights(self.tour, self.highlight_count, champion=self.champ_index)
+        picks = [{"title": p["title"], "match": p["match"], "captions": None, "focus": None}
+                 for p in auto]
+        if self.picks_path:
+            try:
+                with open(self.picks_path) as f:
+                    data = json.load(f)
+                by_key = {(m["i"], m["j"], m["r"]): m for m in self.tour.matches}
+                curated = []
+                for item in data.get("highlights", data):
+                    m = (self.tour.matches[item["index"]] if "index" in item
+                         else by_key.get((item["i"], item["j"], item["r"])))
+                    if m is None:
+                        self.log(f"Highlight not found in this tournament: {item}", WARN)
+                        continue
+                    curated.append({"title": item.get("title", "A match worth seeing"), "match": m,
+                                    "captions": item.get("commentary"), "focus": item.get("focus")})
+                if curated:
+                    picks = curated
+                    self.log(f"{len(curated)} curated highlights from "
+                             f"{os.path.basename(self.picks_path)}.", UP)
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                self.log(f"Could not read the highlights file: {e}", DOWN)
+        self.highlights = picks
+        self.hl_idx = 0
 
     def open_dialog(self):
         path = filedialog.askopenfilename(title="Open a tournament file",
@@ -117,8 +178,9 @@ class Show(BaseApp):
         self.runner_up = (self.display_name(next(i for i, s in enumerate(self.specs)
                                                  if s["name"] == teams[1]["name"]))
                           if len(teams) > 1 else None)
-        self.highlights = finder.find_highlights(tour, self.highlight_count, champion=champ)
-        self.hl_idx, self.phase = 0, "ready"
+        self.champ_index = champ
+        self._pick_highlights()
+        self.phase = "ready"
         self.queue = tour.in_cycles()
         self.total = len(self.queue)
         self.log(f"{os.path.basename(path)}: {len(tour):,} matches, {tour.n} bots, "
@@ -175,7 +237,10 @@ class Show(BaseApp):
                 m = pick["match"]
                 self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])),
                                      pinned=True,
-                                     title=f"{self.hl_idx} of {len(self.highlights)} · {pick['title']}")
+                                     title=f"{self.hl_idx} of {len(self.highlights)} · {pick['title']}",
+                                     labels=(self.notes.get(self.tour.names[m["i"]]),
+                                             self.notes.get(self.tour.names[m["j"]])),
+                                     captions=pick.get("captions"), focus=pick.get("focus"))
             else:
                 self.begin_timelapse()
         elif self.phase == "ready":
@@ -411,6 +476,10 @@ class Show(BaseApp):
         if order:
             cv.create_text(x + w / 2, y + h * 0.42, text=f"{self.score(order[0]):.3f} points per round",
                            fill=DIM, font=self.f_card_label, tags="champ")
+            note = self.notes.get(self.specs[order[0]]["name"])
+            if note:
+                cv.create_text(x + w / 2, y + h * 0.49, text=note, fill=GLOW, width=w - 60 * self.scale,
+                               justify="center", font=self.f_card_label, tags="champ")
         if len(order) > 1:
             cv.create_text(x + w / 2, y + h * 0.60, text="RUNNER-UP", fill=MEDALS[2],
                            font=self.f_stage_name, tags="champ")
