@@ -240,6 +240,7 @@ class Stage:
         self.match = None
         self.pinned = False
         self.title = ""
+        self.labels = self.captions = self.focus = None
         self.hold = 0.0
         self.hold_time = 2.8
         self.owes = False  # presentation: this match still has to reach the board
@@ -255,7 +256,7 @@ class Stage:
         self.cv.delete(self.tag)
         self.cv.create_rectangle(x, y, x + w, y + h, fill=PANEL, outline=LINE, tags=self.tag)
         s = self.app.scale
-        self.head_h = 96 * s
+        self.head_h = (116 if self.labels else 96) * s
         grid_h = h - self.head_h - 14 * s
         # Pick how many rounds go on a row so the squares come out as large as
         # the stage allows (a tall single viewer fits fewer, bigger squares).
@@ -273,6 +274,7 @@ class Stage:
             for t in range(done):
                 self._draw_cell(t)
             if self.hold or self.pinned and done >= self.match[4]:
+                self._ring_focus()
                 self._draw_verdict()
             self._update_text()
         else:
@@ -288,9 +290,13 @@ class Stage:
         self.match, self.pinned, self.hold = None, False, 0.0
         self._draw_waiting()
 
-    def start(self, match, pinned=False, title=""):
+    def start(self, match, pinned=False, title="", labels=None, captions=None, focus=None):
+        """`labels` puts a line under each bot's name (what it plays),
+        `captions` replaces the generated ones, and `focus` is a (first, last)
+        round range to ring once the replay finishes."""
         self.match, self.pinned = match, pinned  # (i, j, pa, pb, n, (ma, mb))
         self.title = title
+        self.labels, self.captions, self.focus = labels, captions, focus
         self.owes, self.quota, self.fed = False, 0, 0
         self.pos, self.drawn = 0.0, 0
         self.run_a = self.run_b = 0
@@ -321,9 +327,15 @@ class Stage:
                             width=0, tags=t)
         cv.create_text(x + w - pad - 16 * s, y + 16 * s, text=app.display_name(j), anchor="ne",
                        fill=FG, font=app.f_stage_name, tags=t)
-        self.score_a = cv.create_text(x + pad + 16 * s, y + 50 * s, text="0.00", anchor="nw",
+        if self.labels:
+            cv.create_text(x + pad + 16 * s, y + 52 * s, text=self.labels[0] or "", anchor="nw",
+                           fill=DIM, font=app.f_card_detail, width=w * 0.3, tags=t)
+            cv.create_text(x + w - pad - 16 * s, y + 52 * s, text=self.labels[1] or "", anchor="ne",
+                           fill=DIM, font=app.f_card_detail, width=w * 0.3, tags=t)
+        sy = y + (72 if self.labels else 50) * s
+        self.score_a = cv.create_text(x + pad + 16 * s, sy, text="0.00", anchor="nw",
                                       fill=DIM, font=app.f_stage_score, tags=t)
-        self.score_b = cv.create_text(x + w - pad - 16 * s, y + 50 * s, text="0.00", anchor="ne",
+        self.score_b = cv.create_text(x + w - pad - 16 * s, sy, text="0.00", anchor="ne",
                                       fill=DIM, font=app.f_stage_score, tags=t)
         self.round_txt = cv.create_text(x + w / 2, y + 22 * s, text="", fill=DIM,
                                         font=app.f_small, tags=t)
@@ -399,11 +411,24 @@ class Stage:
             for dot, _ in self.glows:
                 cv.itemconfig(dot, fill="#111", outline="", width=0)
             self.glows = []
+            self._ring_focus()
             self._draw_verdict()
             if self.pinned:
                 cv.itemconfig(self.flip_txt, text="hover over a round for details")
             else:
                 self.hold = self.hold_time
+
+    def _ring_focus(self):
+        """Ring the rounds worth looking at, once the replay has finished."""
+        if not self.focus:
+            return
+        first, last = max(1, self.focus[0]), min(self.match[4], self.focus[1])
+        for t in range(first - 1, last):
+            x, ya, yb = self._cell_xy(t)
+            c = self.cell
+            for y in (ya, yb):
+                self.cv.create_rectangle(x + 1, y, x + c - 1, y + c - 1, outline=GLOW, width=2,
+                                         tags=(self.tag, self.tag + "dyn"))
 
     def describe(self, t):
         ma, mb = self.match[5]
@@ -426,7 +451,7 @@ class Stage:
         # Captions for replays someone chose (highlights, Watch); auto-played
         # matches in presentation just get the smaller headline.
         detailed = self.pinned
-        captions = match_story(*self.match[5], na, nb)[0] if detailed else []
+        captions = self.captions or (match_story(*self.match[5], na, nb)[0] if detailed else [])
         s = self.app.scale
         t = (self.tag, self.tag + "dyn")
         cx = self.x + self.w / 2
@@ -523,6 +548,7 @@ class BaseApp:
         self.menu.add_command(label="Remove", command=lambda: self.remove_bot(self.menu_target))
         self._refresh_buttons()
         self._layout_pending = None
+        self._laid_out = False
         self.cv.bind("<Configure>", self._on_resize)
         self.cv.bind("<Motion>", self._on_motion)
         root.bind("<F11>", lambda e: root.attributes("-fullscreen", not root.attributes("-fullscreen")))
@@ -780,6 +806,7 @@ class BaseApp:
         self._layout_pending = self.root.after(80, self.layout)
 
     def layout(self):
+        self._laid_out = True
         if self._layout_pending:  # called directly: drop the queued re-layout
             self.root.after_cancel(self._layout_pending)
             self._layout_pending = None
@@ -1381,7 +1408,7 @@ class BaseApp:
         # Real elapsed time (big replays can make frames slow); capped so a
         # stall (dragging the window, a dialog) doesn't cause a jump.
         dt, self.last_tick = min(0.5, now - self.last_tick), now
-        if not self.rows:
+        if not self._laid_out:
             self.layout()
         redraw_card = False
         try:

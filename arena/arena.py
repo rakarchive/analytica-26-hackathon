@@ -572,6 +572,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("tournament", nargs="?", help="a tournament file to open")
+    ap.add_argument("--teams", metavar="MANIFEST", help="load a field of bots from a manifest")
+    ap.add_argument("--house", metavar="PY", help="load house bots from a Python file")
+    ap.add_argument("--reps", type=int, help="matches per pairing")
+    ap.add_argument("--file", metavar="PATH", help="where to save the tournament")
+    ap.add_argument("--run", action="store_true", help="start the tournament straight away")
     ap.add_argument("--selftest", metavar="REPORT", help=argparse.SUPPRESS)
     ap.add_argument("--run-bot", metavar="SCRIPT", help=argparse.SUPPRESS)
     args = ap.parse_args()
@@ -587,8 +592,22 @@ def main():
     adopt_portable_tools()
     root = tk.Tk()
     app = Arena(root)
-    if args.tournament:
-        root.after(200, lambda: app.load_tournament(args.tournament))
+
+    def preload():
+        if args.tournament:
+            app.load_tournament(args.tournament)
+            return
+        if args.teams:
+            app.load_teams(args.teams)
+        if args.house:
+            app.load_house(args.house)
+        if args.reps:
+            app.reps_var.set(str(args.reps))
+        if args.file:
+            app.file_var.set(args.file)
+        if args.run:
+            app.run_or_stop()
+    root.after(200, preload)
     root.mainloop()
 
 
