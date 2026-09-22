@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "arena"))
 
-from baselines import AlwaysCooperate, AlwaysDefect, GenerousTFT, Pavlov, RandomBot, TitForTat
+from baselines import AlwaysCooperate, AlwaysDefect, GenerousTFT, Pavlov, TitForTat
 from harness import C, D, Strategy
 
 
@@ -61,6 +61,32 @@ class SlowGrudge(Strategy):
         return C
 
 
+class Detective(Strategy):
+    """Opens C, D, C, C. If that probe went unpunished it defects for the rest
+    of the match; if it was answered, it settles into tit-for-tat.
+
+    This is the house's test of defence. The rest of the set grades whether a
+    team can spot and exploit a soft opponent; nothing else here probes the
+    teams back, so a bot that never notices it is being tested pays nothing.
+    It replaced a random bot, which separated teams without measuring anything
+    (a wide spread, no relation to where they finished)."""
+    name = "detective"
+    OPENING = [C, D, C, C]
+
+    def reset(self, rng):
+        super().reset(rng)
+        self.mode = None
+
+    def choose(self):
+        t = len(self.my)
+        if t < len(self.OPENING):
+            return self.OPENING[t]
+        if self.mode is None:
+            # Did they answer the probe in round 2, in the three rounds after it?
+            self.mode = "tft" if D in self.opp[1:4] else "exploit"
+        return D if self.mode == "exploit" else self.opp[-1]
+
+
 # (name, class, kwargs). GenerousTFT uses p=0.4 here, not the p=1/3 that ships
 # in the starter pack, so the shipped baseline doesn't reveal the seeded one.
 REFERENCE_BOTS = [
@@ -69,7 +95,7 @@ REFERENCE_BOTS = [
     ("ref_forgiving_threshold", ForgivingThreshold, {}),
     ("ref_tit_for_tat", TitForTat, {}),
     ("ref_pavlov", Pavlov, {}),
-    ("ref_random", RandomBot, {}),
+    ("ref_detective", Detective, {}),
     ("ref_slow_grudge", SlowGrudge, {}),
     ("ref_always_defect", AlwaysDefect, {}),
 ]
