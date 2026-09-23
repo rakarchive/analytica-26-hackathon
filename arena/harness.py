@@ -330,17 +330,25 @@ class ProcessPlayer:
 
 def match_plan(seed, rep):
     """Length and noise for repetition `rep`: per round and side, either None
-    or the move it comes out as instead. Every pairing uses the same plan for
-    a given rep (common random numbers), so differences between bots come from
-    strategy, not from who drew the unlucky noise."""
+    or a draw in [0, 1) that picks which *other* move it comes out as (see
+    noisy). Every pairing uses the same plan for a given rep (common random
+    numbers), so differences between bots come from strategy, not from who
+    drew the unlucky noise."""
     rng = random.Random(f"plan:{seed}:{rep}")
     lo, hi = GAME.rounds
     rounds = rng.randint(lo, hi)
     flips = []
     for _ in range(rounds):
-        flips.append(tuple(rng.choice(GAME.moves) if rng.random() < GAME.noise else None
+        flips.append(tuple(rng.random() if rng.random() < GAME.noise else None
                            for _ in range(2)))
     return rounds, flips
+
+
+def noisy(move, draw):
+    """What `move` comes out as when noise strikes with `draw`: always a
+    different move, so the noise rate is the rate at which moves change."""
+    others = GAME.other_moves(move)
+    return others[int(draw * len(others))]
 
 
 def bot_seed(seed, rep, name, side):
@@ -361,14 +369,10 @@ def play_match(a, b, flips, seed_a=None, seed_b=None, record=None):
         b.request(last_b, last_a)
         ma, status_a = a.response()
         mb, status_b = b.response()
-        if alt_a and alt_a != ma:
-            ma = alt_a          # noise: it comes out as something else
-        else:
-            alt_a = None
-        if alt_b and alt_b != mb:
-            mb = alt_b
-        else:
-            alt_b = None
+        if alt_a is not None:
+            ma = noisy(ma, alt_a)   # noise: it comes out as something else
+        if alt_b is not None:
+            mb = noisy(mb, alt_b)
         if record is not None:
             record.append((ma, mb, alt_a is not None, alt_b is not None, status_a, status_b))
         sa, sb = GAME.payoff[ma, mb]
