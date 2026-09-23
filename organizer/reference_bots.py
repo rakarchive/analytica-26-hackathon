@@ -13,7 +13,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "arena"))
 
 from baselines import AlwaysCooperate, AlwaysDefect, GenerousTFT, Pavlov, TitForTat
-from harness import C, D, Strategy
+from games.ipd import C, D
+from harness import Strategy
 
 
 class ForgivingThreshold(Strategy):
