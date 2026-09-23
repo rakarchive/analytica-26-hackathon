@@ -33,6 +33,10 @@ from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,
                 BaseApp, FlatButton, adopt_portable_tools, baseline_specs, default_workers,
                 user_bot_spec)
 
+# Where tournaments are saved unless Options says otherwise: one numbered file
+# per run, so there is never an old one in the way.
+TOURNAMENT_DIR = os.path.join(tempfile.gettempdir(), "arena-tournaments")
+
 # Three places to be: your bots, how they did, and the matches themselves.
 # Everything else lives under Options.
 VIEWS = [("bots", "Bots"), ("results", "Results"), ("matches", "Matches")]
@@ -71,6 +75,7 @@ class Arena(BaseApp):
         self.self_play_var = tk.BooleanVar(value=False)
         self.baselines_var = tk.BooleanVar(value=True)
         self.file_var = tk.StringVar(value="")
+        self.resume = False      # carry on with the tournament in the file (see run_or_stop)
         self.delta_var = tk.StringVar(value="0.05")
         self.details_var = tk.BooleanVar(value=False)
         self.baselines_var.trace_add("write", lambda *a: self._field_changed())
@@ -85,6 +90,7 @@ class Arena(BaseApp):
                 "self_play": self.self_play_var.get(),
                 "ref_weight": self.num(self.weight_var, float, 1.0),
                 "out": self.file_var.get().strip(),
+                "resume": self.resume,
                 "show_minutes": 0.0, "stage_speed": 30.0}
 
     # ---------------- toolbar ----------------
@@ -219,7 +225,7 @@ class Arena(BaseApp):
 
     def choose_file(self):
         path = filedialog.asksaveasfilename(title="Save the tournament to", defaultextension=".jsonl",
-                                            initialfile="tournament.jsonl",
+                                            initialfile="tournament-1.jsonl",
                                             filetypes=[("Tournament", "*.jsonl")])
         if path:
             self.file_var.set(path)
@@ -256,6 +262,8 @@ class Arena(BaseApp):
                          "ref_weight": self.num(self.weight_var, float, 1.0)}
         self.log(f"Opened {len(tour):,} matches from {os.path.basename(path)} "
                  f"({tour.n} bots, {tour.reps} per pairing, seed {tour.seed}).", UP)
+        if not tour.complete():
+            self.log("It is unfinished: Run tournament carries on with it.", DIM)
         self.show_view("results")
         return True
 
@@ -563,12 +571,30 @@ class Arena(BaseApp):
 
     def run_or_stop(self):
         if self.state not in ("running", "paused"):
-            if not self.file_var.get().strip():
-                self.file_var.set(os.path.join(tempfile.gettempdir(), "arena-tournament.jsonl"))
-                self.log(f"No tournament file chosen; saving to {self.file_var.get()}", DIM)
+            path = self.file_var.get().strip()
+            self.resume = self._can_resume(path)
+            if not self.resume:
+                base = path or os.path.join(TOURNAMENT_DIR, "tournament-1.jsonl")
+                os.makedirs(os.path.dirname(os.path.abspath(base)), exist_ok=True)
+                self.file_var.set(harness.TournamentFile.next_free(base))
+                self.log(f"Saving to {self.file_var.get()}", DIM)
             self.run_started = time.perf_counter()
             self.show_view("results")
         super().run_or_stop()
+
+
+    def _can_resume(self, path):
+        """Carry on with the tournament in `path` only if it is unfinished and
+        was started with this very field: the same bots, the same code (see
+        harness.code_hash) and the same settings. Anything else is a new
+        tournament in a new file, so a team that edits its bot and runs again
+        never gets the old version's results mixed in."""
+        if not path or not os.path.exists(path):
+            return False
+        old = harness.TournamentFile.load(path)
+        opts = self.settings()
+        return (bool(old) and not old.complete() and harness.TournamentFile.compatible(
+            old.header, self.specs, self.num(self.reps_var, int, 100), opts["self_play"], opts["seed"]))
 
 
 SELFTEST_BOT = """import sys

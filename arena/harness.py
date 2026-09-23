@@ -15,9 +15,11 @@ Timeout, crash and junk-output handling lives in ProcessPlayer so that
 the Arena's checks, its runs and the saved tournament all behave identically.
 """
 
+import hashlib
 import os
 import queue
 import random
+import re
 import shlex
 import statistics
 import subprocess
@@ -604,7 +606,7 @@ class TournamentFile:
     @staticmethod
     def header(specs, reps, seed, self_play):
         return {"type": "header", "version": TournamentFile.VERSION, "game": GAME.key,
-                "bots": [{"name": s["name"], "kind": s["kind"]} for s in specs],
+                "bots": [bot_record(s) for s in specs],
                 "reps": reps, "seed": seed, "self_play": bool(self_play),
                 "noise": GAME.noise,
                 "payoff": {f"{a}{b}": list(v) for (a, b), v in GAME.payoff.items()},
@@ -643,8 +645,23 @@ class TournamentFile:
         return (header is not None and header.get("version") == TournamentFile.VERSION
                 and [b["name"] for b in header["bots"]] == [s["name"] for s in specs]
                 and [b["kind"] for b in header["bots"]] == [s["kind"] for s in specs]
+                and [b.get("code") for b in header["bots"]] == [code_hash(s) for s in specs]
                 and header["reps"] == reps and header["self_play"] == bool(self_play)
                 and (seed is None or header["seed"] == seed))
+
+    @staticmethod
+    def next_free(path):
+        """`path` if nothing is there yet, otherwise the next numbered name
+        after it that is free: tournament-1.jsonl, tournament-2.jsonl, ..."""
+        if not os.path.exists(path):
+            return path
+        folder, name = os.path.split(path)
+        stem = name[:-6] if name.endswith(".jsonl") else name
+        numbered = re.fullmatch(r"(.*)-(\d+)", stem)
+        base, k = (numbered.group(1), int(numbered.group(2)) + 1) if numbered else (stem, 2)
+        while os.path.exists(os.path.join(folder, f"{base}-{k}.jsonl")):
+            k += 1
+        return os.path.join(folder, f"{base}-{k}.jsonl")
 
     @staticmethod
     def set_aside(path):
@@ -767,10 +784,39 @@ def projected_seconds(mean_latencies, n_bots, reps, workers):
 # Each worker process keeps its own long-lived instance of every bot it has
 # met (two for self-play) and reuses them across matches via RESET.
 
+def code_hash(spec):
+    """A fingerprint of a bot's code: its source file, or failing that the
+    first file its command names. A tournament is only carried on with the
+    same code it was started with. None for in-process bots."""
+    if "strategy" in spec:
+        return None
+    paths = [spec["source"]] if spec.get("source") else [
+        os.path.join(spec.get("cwd") or ".", arg) for arg in spec.get("cmd", [])[1:]]
+    for path in paths:
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                return hashlib.sha1(f.read()).hexdigest()[:16]
+    return None
+
+
+def bot_record(spec):
+    """What a tournament file keeps about a bot: enough to start it again,
+    and the fingerprint of its code."""
+    rec = {k: spec[k] for k in ("name", "kind", "cmd", "cwd", "source", "path") if spec.get(k)}
+    if "strategy" in spec:
+        rec["strategy"] = list(spec["strategy"])
+    code = code_hash(spec)
+    if code:
+        rec["code"] = code
+    return rec
+
+
 def make_player(spec, slot=0, log_dir=None, worker=0):
     import importlib
     if "strategy" in spec:
         mod, cls, kwargs = spec["strategy"]
+        if spec.get("path") and spec["path"] not in sys.path:
+            sys.path.insert(0, spec["path"])  # house bots live outside the app
         return LocalPlayer(spec["name"], getattr(importlib.import_module(mod), cls)(**kwargs))
     stderr = None
     if log_dir is not None:
