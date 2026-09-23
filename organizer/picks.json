@@ -1,0 +1,100 @@
+{
+ "highlights": [
+  {
+   "i": 5,
+   "j": 9,
+   "r": 2,
+   "title": "The blind spot",
+   "commentary": [
+    "Axelrod Acolytes changed its move in 90% of rounds: defect, cooperate, defect, cooperate.",
+    "Two Strikes only answers two defections in a row, so alternating costs almost nothing."
+   ],
+   "focus": [
+    40,
+    60
+   ]
+  },
+  {
+   "i": 3,
+   "j": 6,
+   "r": 23,
+   "title": "The moment it gave up",
+   "commentary": [
+    "Majority Rule cooperates while the opponent has cooperated more often than not.",
+    "Pavlov's defections crossed half the record at round 80. It never cooperated again."
+   ],
+   "focus": [
+    70,
+    100
+   ]
+  },
+  {
+   "i": 6,
+   "j": 8,
+   "r": 84,
+   "title": "One flip, and that was that",
+   "commentary": [
+    "A single move flipped by noise in round 2 broke cooperation.",
+    "235 rounds later they were still defecting: neither could tell noise from intent."
+   ],
+   "focus": [
+    1,
+    14
+   ]
+  },
+  {
+   "i": 1,
+   "j": 3,
+   "r": 1,
+   "title": "Farming the forgiver",
+   "commentary": [
+    "Pavlov switches after a loss, so it offers cooperation again every other round.",
+    "Always-defect took 3.06 a round from it; Pavlov's Dogs got 0.57."
+   ],
+   "focus": [
+    20,
+    40
+   ]
+  },
+  {
+   "i": 2,
+   "j": 8,
+   "r": 6,
+   "title": "The noisiest match",
+   "commentary": [
+    "Forty-nine moves flipped by noise, more than any other match.",
+    "They still finished cooperating: both forgive faster than the noise breaks them."
+   ]
+  },
+  {
+   "i": 5,
+   "j": 6,
+   "r": 66,
+   "title": "Noise, absorbed",
+   "commentary": [
+    "Eighteen flipped moves, and they still finished level at 2.96 apiece.",
+    "Being slow to take offence costs less than being quick to."
+   ]
+  },
+  {
+   "i": 1,
+   "j": 4,
+   "r": 1,
+   "title": "The champion's worst hour",
+   "commentary": [
+    "The champion's lowest score of the tournament: 0.99 a round.",
+    "Against a bot that only ever defects, there is nothing better to do."
+   ]
+  },
+  {
+   "i": 4,
+   "j": 8,
+   "r": 86,
+   "title": "The title fight",
+   "commentary": [
+    "First and second place met a hundred times; this is one of them.",
+    "Across everyone else they were level, so their own matches decided the tournament."
+   ]
+  }
+ ]
+}

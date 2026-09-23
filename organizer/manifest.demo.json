@@ -1,0 +1,119 @@
+{
+ "bots": [
+  {
+   "name": "Byzantine Generals",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Grim Reapers",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Nash Equilibrists",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Tit4Tat Fans",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "The Defectors",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Pavlov's Dogs",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Axelrod Acolytes",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Noise Cancellers",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Forgive & Forget",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Game Theorists",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Minimax Mob",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Prisoners of Zenda",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Cooperative Kernel",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Bayes Watch",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Zero Determinants",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Trust Issues",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "The Generous",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Stochastic Squad",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Hawk & Dove",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Mixed Strategy",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Crashy McCrashface",
+   "dir": "testbots",
+   "run": "python3 crashy.py"
+  },
+  {
+   "name": "Chatterboxes",
+   "dir": "testbots",
+   "run": "python3 chatty.py"
+  },
+  {
+   "name": "Slowpokes",
+   "dir": "testbots",
+   "run": "python3 slow.py"
+  }
+ ]
+}

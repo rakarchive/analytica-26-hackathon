@@ -1,0 +1,34 @@
+{
+ "bots": [
+  {
+   "name": "Tit4Tat Fans",
+   "dir": "simbots",
+   "run": "python3 tit_for_tat.py"
+  },
+  {
+   "name": "The Defectors",
+   "dir": "simbots",
+   "run": "python3 always_defect.py"
+  },
+  {
+   "name": "The Generous",
+   "dir": "simbots",
+   "run": "python3 generous_tft.py"
+  },
+  {
+   "name": "Noise Cancellers",
+   "dir": "simbots",
+   "run": "python3 contrite_tft.py"
+  },
+  {
+   "name": "Bayes Watch",
+   "dir": "simbots",
+   "run": "python3 bayes.py"
+  },
+  {
+   "name": "Axelrod Acolytes",
+   "dir": "simbots",
+   "run": "python3 adaptive.py"
+  }
+ ]
+}

@@ -1,0 +1,14 @@
+{
+ "bots": {
+  "Tit4Tat Fans": "plain tit-for-tat",
+  "The Defectors": "always defects",
+  "The Generous": "tit-for-tat, forgives a third of defections",
+  "Pavlov's Dogs": "win-stay, lose-shift",
+  "Noise Cancellers": "contrite tit-for-tat: ignores retaliation it caused itself",
+  "Two Strikes": "tit-for-two-tats: retaliates only after two in a row",
+  "Majority Rule": "cooperates while the opponent mostly has",
+  "Detectives": "probes early, then copies or exploits",
+  "Bayes Watch": "predicts each reply, takes the better option",
+  "Axelrod Acolytes": "classifies the opponent, then exploits or reciprocates"
+ }
+}

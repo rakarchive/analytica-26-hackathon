@@ -1,0 +1,10 @@
+# Tournament output (match records, leaderboards, bot stderr)
+results/
+*.jsonl
+
+__pycache__/
+*.pyc
+.DS_Store
+
+# Compiled submissions
+*.class
