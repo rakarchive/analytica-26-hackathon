@@ -3,21 +3,15 @@ name: Build Arena
 # Builds arena/ into a single Windows exe, checks that the packaged build can
 # actually run a tournament, and publishes the participants' download:
 # Arena.exe plus the starter pack (README + bot templates in Python, Java,
-# C and C++). Tag a commit v*
-# to attach it to a GitHub release.
+# C and C++). Runs only when a GitHub release is published, and attaches
+# both zips to that release.
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - "arena/**"
-      - "starter/**"
-      - ".github/workflows/build-arena.yml"
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
-  contents: write  # only used to attach the zip to a release on v* tags
+  contents: write  # to attach the zips to the release
 
 jobs:
   build:
@@ -149,9 +143,9 @@ jobs:
           path: arena/practice/
 
       - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.release.tag_name }}
           files: |
             arena/IPD-Arena.zip
             arena/Arena-Practice.zip
