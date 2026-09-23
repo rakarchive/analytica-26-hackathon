@@ -465,6 +465,11 @@ class Arena(BaseApp):
                    "H0": f"no difference as big as {delta:g}",
                    "continue": "not enough matches to tell"}[c["sprt"]["verdict"]]
         colour = {"H1": UP, "H0": DIM, "continue": WARN}[c["sprt"]["verdict"]]
+        if c["sprt"]["verdict"] != "H1" and c["diff"] + c["ci"] < 0:
+            # The test only asks whether the first bot scores more. When the
+            # answer is a clear no, say which way it went: after Keep this
+            # version, "the change made it worse" is the common case.
+            verdict, colour = f"{nb} really does score more", DOWN
         lines = [
             (f"{na}   vs   {nb}", FG, self.f_stage_name),
             (f"{c['diff']:+.4f} ± {c['ci']:.4f} points per round", FG, self.f_stage_score),
