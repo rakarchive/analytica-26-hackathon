@@ -1,7 +1,7 @@
 # The flash-drive kit
 
 One folder that gives a Windows machine a working bot setup: the Arena plus
-Python, a JDK and g++. Nothing is installed, no admin rights are needed, and
+Python, a JDK, and gcc and g++. Nothing is installed, no admin rights are needed, and
 nothing on the machine is changed.
 
 ## Building it
@@ -18,16 +18,17 @@ or from PyInstaller. Useful switches:
 | Switch | What it does |
 |---|---|
 | `-TrimJdk` | jlink a smaller JDK that still has `javac` (~80 MB instead of ~300 MB) |
-| `-SkipMingw` | leave C++ out |
+| `-SkipMingw` | leave C and C++ out |
 | `-CheckOnly` | check the downloads are reachable, build nothing |
-| `-Out <dir>` | where to assemble (default `IPD-Kit`) |
+| `-Out <dir>` | where to assemble (default `Arena-Kit`) |
 
 Downloads are cached in `.cache`; their hashes go into `hashes.json`, which is
 recorded on the first run and verified afterwards. Commit `hashes.json` so
 every kit is built from the same bytes.
 
-The script finishes by testing the kit: it compiles and runs the Java template
-with the bundled JDK over the real protocol, and runs the Arena's self-test.
+The script finishes by testing the kit: it builds and runs every template
+(Python, Java, C, C++) with the bundled tools over the real protocol, and
+runs the Arena's self-test.
 
 ## What teams get
 

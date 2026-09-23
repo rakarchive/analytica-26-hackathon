@@ -3,14 +3,14 @@
     in one folder that runs from any Windows machine without installing
     anything or needing admin rights.
 
-        IPD-Kit\
+        Arena-Kit\
           Arena.exe          double-click this
           README.txt
-          templates\         my_bot.py, MyBot.java
+          templates\         a starter bot in Python, Java, C and C++
           Shell here.cmd     a terminal with the tools on PATH
           tools\python\      embeddable Python
           tools\jdk\         javac + java
-          tools\mingw\       g++
+          tools\mingw\       gcc + g++
           tools\licenses\
 
     Run this once on a Windows machine with internet, then copy the folder to
@@ -27,13 +27,13 @@
 param(
     # The Arena, built by .github/workflows/build-arena.yml or PyInstaller.
     [string]$Arena = "",
-    [string]$Out = "IPD-Kit",
+    [string]$Out = "Arena-Kit",
     [string]$PythonVersion = "3.12.7",
     [int]$JdkVersion = 21,
     # WinLibs GCC (UCRT). Newer builds: https://winlibs.com  (update the hash too)
     [string]$MingwUrl = "https://github.com/brechtsanders/winlibs_mingw/releases/download/14.2.0posix-19.1.1-12.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-14.2.0-mingw-w64ucrt-12.0.0-r2.zip",
     [switch]$TrimJdk,        # jlink a smaller JDK (still has javac): ~80 MB instead of ~300 MB
-    [switch]$SkipMingw,      # leave C++ out
+    [switch]$SkipMingw,      # leave C and C++ out
     [switch]$CheckOnly,      # just check the downloads are reachable, build nothing
     [ValidateSet("ipd", "rps")]
     # rps builds the practice kit teams get beforehand; pass -Arena the
@@ -101,7 +101,7 @@ function Expand-Into($zip, $dest, $stripTop) {
 
 # ---------------------------------------------------------------- downloads
 
-Write-Host "IPD kit"
+Write-Host "Arena kit"
 $pyUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip"
 $api = "https://api.adoptium.net/v3/assets/latest/$JdkVersion/hotspot" +
        "?architecture=x64&image_type=jdk&os=windows&vendor=eclipse"
@@ -172,19 +172,19 @@ foreach ($pair in @(@{from = "python\LICENSE.txt"; to = "python-LICENSE.txt" },
 }
 
 @"
-IPD Arena - everything you need, nothing to install
-===================================================
+The Arena - everything you need, nothing to install
+====================================================
 
 1. Double-click Arena.exe.
-2. Click "+ Add bot" and pick your bot's main file (templates\ has a starter
-   in Python and Java; copy one and edit choose()).
+2. Click "+ Add bot" and pick your bot's source file (templates\ has a
+   starter in Python, Java, C and C++; copy one and edit choose()).
 3. Click "Check", then "Run tournament".
 
-Python, Java and C++ all work straight from this folder: the Arena puts
+Python, Java, C and C++ all work straight from this folder: the Arena puts
 tools\ on its own PATH. Nothing is installed and nothing on the machine is
 changed. Windows may warn that the app is unsigned: More info -> Run anyway.
 
-Prefer a terminal? "Shell here.cmd" opens one with python, javac and g++ ready.
+Prefer a terminal? "Shell here.cmd" opens one with python, javac, gcc and g++ ready.
 
 The protocol your bot speaks is described in README-protocol.md.
 Licences for the bundled tools are in tools\licenses\.
@@ -196,7 +196,7 @@ rem A terminal with the kit's tools on PATH.
 set "KIT=%~dp0"
 set "JAVA_HOME=%KIT%tools\jdk"
 set "PATH=%KIT%tools\python;%KIT%tools\jdk\bin;%KIT%tools\mingw\bin;%PATH%"
-echo Python, javac and g++ are ready in this window.
+echo Python, javac, gcc and g++ are ready in this window.
 cmd /k
 "@ | Set-Content (Join-Path $kit "Shell here.cmd")
 
@@ -205,23 +205,46 @@ cmd /k
 Write-Host "checking the kit"
 $py = Join-Path $tools "python\python.exe"
 $javac = Join-Path $tools "jdk\bin\javac.exe"
+$java = Join-Path $tools "jdk\bin\java.exe"
+$gcc = Join-Path $tools "mingw\bin\gcc.exe"
 $gpp = Join-Path $tools "mingw\bin\g++.exe"
 & $py -V
 & $javac -version
 if (Test-Path $gpp) { & $gpp --version | Select-Object -First 1 }
 
-# Compile and run the Java template with the bundled JDK, over the real protocol.
+# Build and run every template with the bundled tools, over the real
+# protocol, built the way the Arena builds them.
 $work = Join-Path $cache "verify"
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory -Force $work | Out-Null
-Copy-Item (Join-Path $templates "java\MyBot.java") $work
-Push-Location $work
-& $javac MyBot.java
-if ($LASTEXITCODE -ne 0) { Pop-Location; throw "the bundled JDK could not compile the Java template" }
-$moves = "RESET`nROUND - -`nROUND C D`nEND" | & (Join-Path $tools "jdk\bin\java.exe") -cp . MyBot
-Pop-Location
-if (($moves -join "") -notmatch "^[CD]+$") { throw "the Java template did not play: '$moves'" }
-Write-Host "  java bot replied: $($moves -join ' ')"
+$env:PATH = "$(Join-Path $tools 'mingw\bin');$env:PATH"
+$round, $reply = if ($Game -eq "rps") { "ROUND R P", "^[RPS]+$" } else { "ROUND C D", "^[CD]+$" }
+$session = "RESET`nROUND - -`n$round`nEND"
+
+function Test-Template($label, $file, [scriptblock]$build, [scriptblock]$run) {
+    $dir = Join-Path $work $label
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    Copy-Item (Join-Path $templates $file) $dir
+    Push-Location $dir
+    try {
+        if ($build) {
+            & $build
+            if ($LASTEXITCODE -ne 0) { throw "the bundled tools could not build the $label template" }
+        }
+        $moves = & $run $session
+    } finally {
+        Pop-Location
+    }
+    if (($moves -join "") -notmatch $reply) { throw "the $label template did not play: '$moves'" }
+    Write-Host "  $label bot replied: $($moves -join ' ')"
+}
+
+Test-Template "Python" "python\my_bot.py" $null { param($in) $in | & $py my_bot.py }
+Test-Template "Java" "java\MyBot.java" { & $javac MyBot.java } { param($in) $in | & $java -cp . MyBot }
+if (Test-Path $gpp) {
+    Test-Template "C" "c\my_bot.c" { & $gcc -O2 -static -o my_bot.exe my_bot.c -lm } { param($in) $in | & .\my_bot.exe }
+    Test-Template "C++" "cpp\my_bot.cpp" { & $gpp -O2 -std=c++17 -static -o my_bot.exe my_bot.cpp } { param($in) $in | & .\my_bot.exe }
+}
 
 $arenaExe = Join-Path $kit "Arena.exe"
 if (Test-Path $arenaExe) {

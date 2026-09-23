@@ -2,7 +2,8 @@ name: Build Arena
 
 # Builds arena/ into a single Windows exe, checks that the packaged build can
 # actually run a tournament, and publishes the participants' download:
-# Arena.exe plus the starter pack (README + bot templates). Tag a commit v*
+# Arena.exe plus the starter pack (README + bot templates in Python, Java,
+# C and C++). Tag a commit v*
 # to attach it to a GitHub release.
 
 on:
@@ -31,6 +32,47 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"  # what the flash-drive kit ships
+
+      - name: Every template builds and plays
+        # Built the way the Arena builds them, with the runner's JDK and MinGW
+        # gcc/g++, then played over the real protocol.
+        working-directory: .
+        run: |
+          $packs = @(
+            @{ dir = "starter\templates"; round = "ROUND C D"; reply = "^[CD]+$" },
+            @{ dir = "starter\practice\templates"; round = "ROUND R P"; reply = "^[RPS]+$" }
+          )
+          foreach ($pack in $packs) {
+            $session = "RESET`nROUND - -`n$($pack.round)`nEND"
+            $work = Join-Path $env:RUNNER_TEMP ("templates-" + [guid]::NewGuid())
+            Copy-Item -Recurse $pack.dir $work
+            Push-Location $work
+            javac java\MyBot.java
+            if ($LASTEXITCODE) { throw "$($pack.dir): javac failed" }
+            gcc -O2 -static -o c\my_bot.exe c\my_bot.c -lm
+            if ($LASTEXITCODE) { throw "$($pack.dir): gcc failed" }
+            g++ -O2 -std=c++17 -static -o cpp\my_bot.exe cpp\my_bot.cpp
+            if ($LASTEXITCODE) { throw "$($pack.dir): g++ failed" }
+            $runs = [ordered]@{
+              "Python" = { $session | python python\my_bot.py }
+              "Java"   = { $session | java -cp java MyBot }
+              "C"      = { $session | .\c\my_bot.exe }
+              "C++"    = { $session | .\cpp\my_bot.exe }
+            }
+            foreach ($name in $runs.Keys) {
+              $moves = & $runs[$name]
+              if (($moves -join "") -notmatch $pack.reply) {
+                throw "$($pack.dir): the $name template did not play: '$moves'"
+              }
+              Write-Host "$($pack.dir)  $name replied: $($moves -join ' ')"
+            }
+            Pop-Location
+          }
 
       - name: Install PyInstaller
         run: python -m pip install "pyinstaller==6.*"

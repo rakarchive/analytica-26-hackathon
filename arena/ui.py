@@ -156,10 +156,13 @@ def detect(path):
         return None, ["java", "-cp", ".", stem]
     if ext == ".jar":
         return None, ["java", "-jar", fname]
+    # Static on Windows, so a compiled bot never depends on finding MinGW's
+    # runtime DLLs on the PATH of whatever machine ends up running it.
+    static = ["-static"] if harness.WINDOWS else []
     if ext in (".cpp", ".cc", ".cxx"):
-        return ["g++", "-O2", "-std=c++17", "-o", exe, fname], [os.path.join(folder, exe)]
+        return ["g++", "-O2", "-std=c++17", *static, "-o", exe, fname], [os.path.join(folder, exe)]
     if ext == ".c":
-        return ["gcc", "-O2", "-o", exe, fname], [os.path.join(folder, exe)]
+        return ["gcc", "-O2", *static, "-o", exe, fname, "-lm"], [os.path.join(folder, exe)]
     if ext == ".js":
         return None, ["node", fname]
     return None, [os.path.abspath(path)]

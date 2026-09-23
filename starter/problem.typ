@@ -96,9 +96,10 @@ will not last long.
 #pagebreak(weak: true)
 = Your bot
 
-Your bot is a program that reads commands on standard input and writes moves
-on standard output, one per line. It is started *once* and kept running for
-the whole tournament, playing match after match.
+Your bot is *one source file* in Python, Java, C or C++. It reads commands on
+standard input and writes moves on standard output, one per line. It is
+started *once* and kept running for the whole tournament, playing match after
+match.
 
 #table(
   columns: (auto, auto, 1fr),
@@ -133,6 +134,7 @@ sends):
   and forfeit every round. This is the most common way to lose an hour:
   - Python: `print(move, flush=True)`
   - Java: `System.out.println(move); System.out.flush();`
+  - C: `printf("%c\n", move); fflush(stdout);`
   - C++: `std::cout << move << std::endl;` (`"\n"` alone does not flush)
 + *Standard output is for moves only.* Print anything else to standard error.
 + *No memory between matches.* Clear everything on `RESET`. Recognising an
@@ -146,8 +148,11 @@ sends):
   for you. A bot that crashes forfeits the rest of that match and is
   restarted for the next one. One that fails to start three times in a row is
   out.
-+ *Python, Java or C++*, standard library only. Nothing is installed on the
-  tournament machine beyond the language itself.
++ *One source file: Python, Java, C or C++*, standard library only. Nothing
+  is installed on the tournament machine beyond the language itself, and we
+  compile your bot exactly as the Arena does (see `README.md`). In Java, the
+  file's public class must share its name, and any other classes go inside the
+  same file.
 + *No network, no files, no other processes.* Your bot talks to the
   tournament over standard input and output and nothing else.
 + *One bot per team.* Bots may not work together.
@@ -156,9 +161,8 @@ sends):
 
 The starter pack has:
 
-- *Templates* in Python (`templates/python/my_bot.py`) and Java
-  (`templates/java/MyBot.java`). Each one already handles the protocol and plays
-  generous tit-for-tat, with tit-for-tat and Pavlov included to switch to.
+- *Templates* in Python, Java, C and C++, in `templates/`. Each one already
+  handles the protocol and plays generous tit-for-tat, with tit-for-tat and Pavlov included to switch to.
   Copy the one for your language and change how it chooses its move. These are
   the textbook answers, the floor to build on.
 - *The Arena* (`Arena.exe`). It runs your bot the same way the tournament does,
@@ -182,6 +186,5 @@ the pack.
   [*1:45 – 2:00*], [Highlights, the leaderboard, and the winners.],
 )
 
-Submit a single source file (or a folder, for Java with several classes) and
-tell us the language. Submit early and resubmit as often as you like; we take
+Submit your bot's one source file. Submit early and resubmit as often as you like; we take
 the last version in by 1:25.

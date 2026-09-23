@@ -13,6 +13,7 @@ arena/selftest.txt
 
 # Flash-drive kit: downloads and the assembled folder
 kit/.cache/
+Arena-Kit/
 IPD-Kit/
 
 # Not part of the project
