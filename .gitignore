@@ -13,3 +13,6 @@ Arena-Kit/
 
 # Not part of the project
 output.mp4
+
+# Versions teams keep with the Arena (Keep this version)
+versions/

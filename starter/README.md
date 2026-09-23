@@ -57,6 +57,13 @@ Open `Arena.exe`. It has three tabs:
 stdout. Java, C and C++ are compiled for you, the same way the tournament
 compiles them. Right-click a bot to change its run command.
 
+**Keep this version** freezes your bot as it is now: a copy joins the field as
+a fixed opponent, `my_bot (v1)`, and stays exactly like that while you carry
+on editing. After every run, Results compares your bot with the version you
+kept last, and says whether the change really helped or whether you haven't
+played enough matches to know. Keep a version before each big change. The
+copies are saved in a `versions` folder beside your bot.
+
 **Results** — after a run, every bot's points per round with a confidence
 interval, and how often it cooperated. Click a bot for its record against each
 opponent. Click two bots to compare them properly: they are judged on the
