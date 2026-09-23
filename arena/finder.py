@@ -32,8 +32,8 @@ def find_highlights(tour, count=10, champion=None):
     def story(m, met):
         """What the audience would see: the verdict and the captions. Two
         matches often tell the same story, because every repetition uses the
-        same noise draws, so two pairings that both collapse into permanent
-        defection play out identically."""
+        same noise draws, so two pairings that both fall into the same rut
+        play out identically."""
         return (game.verdict(m["pa"] / m["n"], m["pb"] / m["n"])[0],
                 tuple(game.match_story(m["a"], m["b"], "one", "other")[0]))
 
