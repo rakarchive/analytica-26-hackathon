@@ -1,7 +1,3 @@
-# Organizer material (house bots, simulations, results) must never be pushed:
-# the seeded field is supposed to stay secret.
-organizer/
-
 __pycache__/
 .DS_Store
 arena/build/
