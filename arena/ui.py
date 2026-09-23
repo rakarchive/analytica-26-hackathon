@@ -38,7 +38,7 @@ import threading
 import time
 import tkinter as tk
 import traceback
-from tkinter import filedialog, messagebox, simpledialog
+from tkinter import filedialog, simpledialog
 from tkinter import font as tkfont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -171,7 +171,7 @@ def detect(path):
 def user_bot_spec(path, name):
     build, run = detect(path)
     return {"name": name, "kind": "team", "cmd": run, "cwd": os.path.dirname(os.path.abspath(path)),
-            "build": build}
+            "build": build, "source": os.path.abspath(path)}
 
 
 def baseline_specs():
@@ -1289,27 +1289,14 @@ class BaseApp:
         os.makedirs(log_dir, exist_ok=True)
         seed = opts["seed"]
 
-        # Resume the run saved in the tournament file, if it is the same field.
+        # Carry on with the tournament in the file when the app says to (see
+        # settings()["resume"]); otherwise the file is a new one. Nobody is
+        # asked: an existing file is moved aside, never overwritten.
         records, tfile = [], None
         if out:
-            old = harness.TournamentFile.load(out)
-            resume = False
-            if old and harness.TournamentFile.compatible(old.header, specs, reps, self_play, seed):
-                done = len(old)
-                if done >= self.total:
-                    question = (f"{os.path.basename(out)} holds a finished tournament with this field "
-                                f"({done:,} matches, seed {old.seed}).\n\n"
-                                "Yes: load it.\nNo: play a new tournament "
-                                "(the old file is kept as a backup).")
-                else:
-                    question = (f"{os.path.basename(out)} holds an unfinished tournament with this "
-                                f"field: {done:,} of {self.total:,} matches (seed {old.seed}).\n\n"
-                                "Yes: resume it.\nNo: start over (the old file is kept as a backup).")
-                resume = messagebox.askyesno("Resume tournament?", question, parent=self.root)
-            elif old:
-                self._append_log("That tournament file holds a different field or settings; "
-                                 "starting a new one.", WARN)
-            if resume:
+            old = harness.TournamentFile.load(out) if opts.get("resume") else None
+            if old and harness.TournamentFile.compatible(old.header, specs, reps, self_play, seed) \
+                    and len(old) < self.total:
                 seed, records = old.seed, old.matches
                 tfile = harness.TournamentFile(out, old.header, resume=True)
             else:
@@ -1612,7 +1599,7 @@ class BaseApp:
             sys.path.insert(0, folder)  # worker processes inherit sys.path
         try:
             mod = importlib.import_module(os.path.splitext(fname)[0])
-            specs = [dict(s, kind="ref") for s in mod.reference_specs()]
+            specs = [dict(s, kind="ref", path=folder) for s in mod.reference_specs()]
         except Exception as e:
             self.log(f"Could not load house bots from {path}: {e}", DOWN)
             return False
