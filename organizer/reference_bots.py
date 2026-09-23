@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "arena"))
 
-from baselines import AlwaysCooperate, AlwaysDefect, GenerousTFT, Pavlov, TitForTat
-from games.ipd import C, D
+from rules import C, D
+from sparring import AlwaysCooperate, AlwaysDefect, GenerousTFT, Pavlov, TitForTat
 from harness import Strategy
 
 

@@ -4,7 +4,7 @@ arena/build/
 arena/dist/
 arena/package/
 arena/*.spec
-arena/IPD-Arena.zip
+arena/Arena.zip
 arena/selftest.txt
 
 # Flash-drive kit: downloads and the assembled folder

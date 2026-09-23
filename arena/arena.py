@@ -26,7 +26,6 @@ from tkinter import font as tkfont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import game  # noqa: E402
-import games  # noqa: E402
 import harness  # noqa: E402
 import stats as stat  # noqa: E402
 from ui import *  # noqa: E402,F401,F403
@@ -43,7 +42,7 @@ class Arena(BaseApp):
     """The match runner: teams test their bot with it, the organizer plays the
     tournament with it and saves the file the show is made from."""
 
-    TITLE = "Arena"
+    TITLE = "ANALYTICA - INTEGRATE AND CONQUER"
 
     def __init__(self, root):
         self.view = "bots"
@@ -565,7 +564,7 @@ class Arena(BaseApp):
     def run_or_stop(self):
         if self.state not in ("running", "paused"):
             if not self.file_var.get().strip():
-                self.file_var.set(os.path.join(tempfile.gettempdir(), "ipd-tournament.jsonl"))
+                self.file_var.set(os.path.join(tempfile.gettempdir(), "arena-tournament.jsonl"))
                 self.log(f"No tournament file chosen; saving to {self.file_var.get()}", DIM)
             self.run_started = time.perf_counter()
             self.show_view("results")
@@ -613,7 +612,6 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("tournament", nargs="?", help="a tournament file to open")
-    ap.add_argument("--game", choices=games.names(), help="which game to play (default: see game.txt)")
     ap.add_argument("--teams", metavar="MANIFEST", help="load a field of bots from a manifest")
     ap.add_argument("--house", metavar="PY", help="load house bots from a Python file")
     ap.add_argument("--reps", type=int, help="matches per pairing")
@@ -629,8 +627,6 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.abspath(args.run_bot)))
         runpy.run_path(args.run_bot, run_name="__main__")
         return
-    if args.game:
-        harness.set_game(args.game)
     if args.selftest:
         sys.exit(selftest(args.selftest))
     adopt_portable_tools()

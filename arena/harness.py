@@ -2,13 +2,13 @@
 
 Two kinds of player share one interface:
 
-* LocalPlayer   wraps an in-process Python Strategy (baselines, reference bots).
+* LocalPlayer   wraps an in-process Python Strategy (sparring partners, house bots).
 * ProcessPlayer talks to a long-lived subprocess over the line protocol:
 
       -> RESET                 new match, clear per-match state
       -> ROUND - -             first round of a match, no history yet
       -> ROUND <mine> <theirs> previous round's ACTUAL (post-noise) moves
-      <- C | D                 your move for this round
+      <- <move>                your move for this round
       -> END                   tournament over, exit
 
 Timeout, crash and junk-output handling lives in ProcessPlayer so that
@@ -26,17 +26,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-import games
-
-GAME = games.current()   # the rules in force; see games/ and set_game()
-
-
-def set_game(key):
-    """Switch games. Worker processes are told which game to play, so this is
-    the only thing that has to travel with a run."""
-    global GAME
-    GAME = games.use(key)
-    return GAME
+from rules import GAME   # the game being played: see rules.py
 MOVE_TIMEOUT = 0.050     # hard per-move limit; overrun forfeits the round (see play_match)
 STARTUP_TIMEOUT = 10.0   # allowance for the first reply after (re)start: JVM etc.
 WINDOWS = sys.platform == "win32"
@@ -791,8 +781,7 @@ def make_player(spec, slot=0, log_dir=None, worker=0):
                          move_timeout=spec.get("move_timeout", MOVE_TIMEOUT))
 
 
-def _worker(specs, seed, tasks, results, log_dir, worker, stream_moves, game_key):
-    set_game(game_key)          # a spawned worker starts with the default game
+def _worker(specs, seed, tasks, results, log_dir, worker, stream_moves):
     players = {}
 
     def get(i, slot):
@@ -851,7 +840,7 @@ def run_round_robin(specs, reps, seed=0, workers=1, self_play=False,
     ctx = mp.get_context("spawn")
     tasks, results = ctx.Queue(), ctx.Queue()
     procs = [ctx.Process(target=_worker,
-                         args=(specs, seed, tasks, results, log_dir, w, on_match is not None, GAME.key),
+                         args=(specs, seed, tasks, results, log_dir, w, on_match is not None),
                          daemon=False) for w in range(workers)]
     for p in procs:
         p.start()

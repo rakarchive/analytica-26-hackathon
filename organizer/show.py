@@ -46,7 +46,7 @@ def mix(c1, c2, t):
 class Show(BaseApp):
     """A player: no engine, no bots, just the file and the reveal."""
 
-    TITLE = "IPD Tournament"
+    TITLE = "ANALYTICA - INTEGRATE AND CONQUER"
 
     def __init__(self, root, tour=None, highlights=10, timelapse=90.0):
         self.tour = None

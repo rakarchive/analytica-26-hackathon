@@ -2,7 +2,7 @@
 beat them. Each sees only what your bot sees: the previous round's ACTUAL
 (post-noise) moves, accumulated in self.my / self.opp."""
 
-from games.ipd import C, D
+from rules import C, D
 from harness import Strategy
 
 

@@ -78,7 +78,7 @@ FROZEN = getattr(sys, "frozen", False)  # running as the packaged Arena.exe
 
 # Bots' stderr (their debug prints) goes to files here. A windowed exe has no
 # console, and a bot writing to a missing stderr would crash.
-BOT_LOG_DIR = os.path.join(tempfile.gettempdir(), "ipd-arena-logs")
+BOT_LOG_DIR = os.path.join(tempfile.gettempdir(), "arena-logs")
 
 
 PORTABLE_PYTHON = None   # set when a kit's Python is adopted from tools/
@@ -512,7 +512,7 @@ class BaseApp:
     """Board, stages, check cards, runs. Subclasses add their toolbar and,
     for the event app, the presentation."""
 
-    TITLE = "IPD Arena"
+    TITLE = "ANALYTICA - INTEGRATE AND CONQUER"
 
     def __init__(self, root):
         self.root = root

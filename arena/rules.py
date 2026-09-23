@@ -1,4 +1,4 @@
-"""The noisy iterated prisoner's dilemma: the real game.
+"""The game: the noisy iterated prisoner's dilemma.
 
 Two bots choose to cooperate or defect each round. Cooperating together pays
 better than defecting together, but defecting against a cooperator pays best
@@ -6,8 +6,7 @@ of all, which is the dilemma. Noise flips some moves on the way out, so a bot
 cannot tell a deliberate defection from an accident.
 """
 
-from games import register
-from games.base import Game
+from gamebase import Game
 
 C, D = "C", "D"
 
@@ -29,13 +28,22 @@ class IPD(Game):
     past = {C: "cooperated", D: "defected"}
     forfeit = D             # a bot that times out or crashes is treated as defecting
     stat = ("COOP", {C})            # how much of the time it cooperated
-    baselines = (("baselines", "AlwaysCooperate"), ("baselines", "AlwaysDefect"),
-                 ("baselines", "RandomBot"), ("baselines", "TitForTat"),
-                 ("baselines", "GenerousTFT"), ("baselines", "Pavlov"),
-                 ("baselines", "Grudger"), ("baselines", "TitForTwoTats"),
-                 ("baselines", "SuspiciousTFT"))
-    smoke = (("baselines", "TitForTat"), ("baselines", "AlwaysDefect"), ("baselines", "RandomBot"))
+    baselines = (("sparring", "AlwaysCooperate"), ("sparring", "AlwaysDefect"),
+                 ("sparring", "RandomBot"), ("sparring", "TitForTat"),
+                 ("sparring", "GenerousTFT"), ("sparring", "Pavlov"),
+                 ("sparring", "Grudger"), ("sparring", "TitForTwoTats"),
+                 ("sparring", "SuspiciousTFT"))
+    smoke = (("sparring", "TitForTat"), ("sparring", "AlwaysDefect"), ("sparring", "RandomBot"))
     kind_colour = {"coop": "up", "lock": "down", "take": "warn"}
+    highlights = (
+        ("The biggest extraction", "gap", 1.0),
+        ("The longest breakdown", "echo", 6),
+        ("The longest mutual-defection lock", "lock", 10),
+        ("Closest to perfect cooperation", "coop", 2.6),
+        ("The most unprovoked defections", "unprovoked", 4),
+        ("The noisiest match", "flips", 14),
+        ("Cooperation restored after a long feud", "recovery", 1),
+    )
 
     def verdict(self, a, b):
         """What a match was like, from each side's points per round: (kind,
@@ -109,4 +117,15 @@ class IPD(Game):
         return [text for _, text in lines[:2]], metrics
 
 
-register(IPD())
+    def measure(self, m):
+        met = super().measure(m)
+        met["coop"] = min(m["pa"], m["pb"]) / m["n"]
+        # Cooperation out of nowhere: a long lock that still ended in cooperation.
+        tail = [actual(c) == "C" and actual(d) == "C" for c, d in zip(m["a"][-12:], m["b"][-12:])]
+        met["recovery"] = met["lock"] if met["lock"] >= 15 and all(tail) else 0
+        met["drama"] = (met["gap"] * 2 + met["echo"] / 20 + met["lock"] / 20
+                        + met["unprovoked"] / 5 + met["forfeits"])
+        return met
+
+
+GAME = IPD()

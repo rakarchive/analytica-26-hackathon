@@ -2,16 +2,19 @@ name: Build Arena
 
 # Builds arena/ into a single Windows exe, checks that the packaged build can
 # actually run a tournament, and publishes the participants' download:
-# Arena.exe plus the starter pack (README + bot templates in Python, Java,
+# Arena.exe plus the starter pack (README and bot templates in Python, Java,
 # C and C++). Runs only when a GitHub release is published, and attaches
-# both zips to that release.
+# Arena.zip to that release.
+#
+# The game is whichever one the release's branch plays (arena/rules.py): the
+# ipd branch for the event, the rps branch for the practice pack.
 
 on:
   release:
     types: [published]
 
 permissions:
-  contents: write  # to attach the zips to the release
+  contents: write  # to attach the zip to the release
 
 jobs:
   build:
@@ -32,51 +35,71 @@ jobs:
           distribution: temurin
           java-version: "21"  # what the flash-drive kit ships
 
+      - name: Which game this is
+        id: game
+        run: |
+          $key = python -c "from rules import GAME; print(GAME.key)"
+          $moves = python -c "from rules import GAME; print(''.join(GAME.moves))"
+          "key=$key" >> $env:GITHUB_OUTPUT
+          "moves=$moves" >> $env:GITHUB_OUTPUT
+          Write-Host "building the Arena for: $key (moves $moves)"
+
+      - name: A practice build must not give the real game away
+        # The exe is these sources plus Python itself, so checking them is
+        # checking everything a team could unpack from it.
+        if: steps.game.outputs.key != 'ipd'
+        working-directory: .
+        run: |
+          $words = "prisoner", "cooperat", "defect", "tit.for.tat", "titfortat", "pavlov", "grudge", "\bipd\b"
+          $files = @(Get-ChildItem arena -Filter *.py) + @(Get-ChildItem starter -Recurse -File)
+          $leaks = foreach ($f in $files) {
+            foreach ($w in $words) {
+              Select-String -Path $f.FullName -Pattern $w | ForEach-Object { "$($f.Name):$($_.LineNumber): $w" }
+            }
+          }
+          if ($leaks) { $leaks | Write-Host; throw "the practice build names the real game" }
+          Write-Host "nothing in the practice build names the real game"
+
       - name: Every template builds and plays
         # Built the way the Arena builds them, with the runner's JDK and MinGW
         # gcc/g++, then played over the real protocol.
         working-directory: .
         run: |
-          $packs = @(
-            @{ dir = "starter\templates"; round = "ROUND C D"; reply = "^[CD]+$" },
-            @{ dir = "starter\practice\templates"; round = "ROUND R P"; reply = "^[RPS]+$" }
-          )
-          foreach ($pack in $packs) {
-            $session = "RESET`nROUND - -`n$($pack.round)`nEND"
-            $work = Join-Path $env:RUNNER_TEMP ("templates-" + [guid]::NewGuid())
-            Copy-Item -Recurse $pack.dir $work
-            Push-Location $work
-            javac java\MyBot.java
-            if ($LASTEXITCODE) { throw "$($pack.dir): javac failed" }
-            gcc -O2 -static -o c\my_bot.exe c\my_bot.c -lm
-            if ($LASTEXITCODE) { throw "$($pack.dir): gcc failed" }
-            g++ -O2 -std=c++17 -static -o cpp\my_bot.exe cpp\my_bot.cpp
-            if ($LASTEXITCODE) { throw "$($pack.dir): g++ failed" }
-            $runs = [ordered]@{
-              "Python" = { $session | python python\my_bot.py }
-              "Java"   = { $session | java -cp java MyBot }
-              "C"      = { $session | .\c\my_bot.exe }
-              "C++"    = { $session | .\cpp\my_bot.exe }
-            }
-            foreach ($name in $runs.Keys) {
-              $moves = & $runs[$name]
-              if (($moves -join "") -notmatch $pack.reply) {
-                throw "$($pack.dir): the $name template did not play: '$moves'"
-              }
-              Write-Host "$($pack.dir)  $name replied: $($moves -join ' ')"
-            }
-            Pop-Location
+          $moves = "${{ steps.game.outputs.moves }}"
+          $session = "RESET`nROUND - -`nROUND $($moves[0]) $($moves[-1])`nEND"
+          $work = Join-Path $env:RUNNER_TEMP "templates"
+          Copy-Item -Recurse starter\templates $work
+          Push-Location $work
+          javac java\MyBot.java
+          if ($LASTEXITCODE) { throw "javac failed" }
+          gcc -O2 -static -o c\my_bot.exe c\my_bot.c -lm
+          if ($LASTEXITCODE) { throw "gcc failed" }
+          g++ -O2 -std=c++17 -static -o cpp\my_bot.exe cpp\my_bot.cpp
+          if ($LASTEXITCODE) { throw "g++ failed" }
+          $runs = [ordered]@{
+            "Python" = { $session | python python\my_bot.py }
+            "Java"   = { $session | java -cp java MyBot }
+            "C"      = { $session | .\c\my_bot.exe }
+            "C++"    = { $session | .\cpp\my_bot.exe }
           }
+          foreach ($name in $runs.Keys) {
+            $reply = & $runs[$name]
+            if (($reply -join "") -notmatch "^[$moves]+$") {
+              throw "the $name template did not play: '$reply'"
+            }
+            Write-Host "$name replied: $($reply -join ' ')"
+          }
+          Pop-Location
 
       - name: Install PyInstaller
         run: python -m pip install "pyinstaller==6.*"
 
       - name: Build Arena.exe
-        # baselines and harness are imported dynamically by the tournament
-        # worker processes, so name them explicitly.
+        # The sparring partners are imported by name when a tournament
+        # starts, so name them explicitly.
         run: >
           pyinstaller --onefile --windowed --name Arena
-          --hidden-import baselines --hidden-import harness
+          --hidden-import sparring --hidden-import harness --hidden-import rules
           arena.py
 
       - name: Self-test the packaged exe
@@ -88,64 +111,24 @@ jobs:
           $p = Start-Process -FilePath dist\Arena.exe -ArgumentList '--selftest', 'selftest.txt' -Wait -PassThru
           Get-Content selftest.txt
           if ($p.ExitCode -ne 0) { throw "Arena.exe self-test failed (exit $($p.ExitCode))" }
+          if (-not (Select-String -Path selftest.txt -Pattern "game: ${{ steps.game.outputs.key }}")) {
+            throw "the exe is not playing ${{ steps.game.outputs.key }}"
+          }
 
-      - name: Build the practice exe
-        # A separate binary that does not contain the real game at all: with
-        # games.ipd and the baselines left out there is nothing to find in it,
-        # by flag, by strings, or by unpacking.
-        run: >
-          pyinstaller --onefile --windowed --name ArenaPractice
-          --exclude-module games.ipd --exclude-module baselines
-          --hidden-import rps_bots --hidden-import harness
-          arena.py
-
-      - name: Assemble the downloads
+      - name: Assemble the download
         run: |
-          New-Item -ItemType Directory -Force package, practice | Out-Null
+          New-Item -ItemType Directory -Force package | Out-Null
           Copy-Item dist\Arena.exe, ..\starter\README.md package\
           Copy-Item -Recurse ..\starter\templates package\templates
-          Compress-Archive -Path package\* -DestinationPath IPD-Arena.zip -Force
-          Copy-Item dist\ArenaPractice.exe practice\Arena.exe
-          Copy-Item ..\starter\practice\README.md practice\
-          Copy-Item -Recurse ..\starter\practice\templates practice\templates
-          "rps" | Set-Content practice\game.txt
-          Compress-Archive -Path practice\* -DestinationPath Arena-Practice.zip -Force
-
-      - name: The practice pack must not give the real game away
-        run: |
-          $bytes = [IO.File]::ReadAllBytes("practice\Arena.exe")
-          $text = [Text.Encoding]::ASCII.GetString($bytes)
-          $leaks = @()
-          foreach ($word in "prisoner", "cooperat", "tit_for_tat", "generous_tft", "always_defect",
-                            "grudger", "pavlov", "games.ipd") {
-            if ($text -match [regex]::Escape($word)) { $leaks += $word }
-          }
-          if ($leaks.Count) { throw "the practice exe contains: $($leaks -join ', ')" }
-          Write-Host "nothing in the practice exe names the real game"
-
-      - name: Check the practice pack plays the practice game
-        run: |
-          $p = Start-Process -FilePath practice\Arena.exe -ArgumentList '--selftest', 'practice.txt' -Wait -PassThru
-          Get-Content practice.txt
-          if ($p.ExitCode -ne 0) { throw "practice pack self-test failed" }
-          if (-not (Select-String -Path practice.txt -Pattern "game: rps")) {
-            throw "the practice pack is not playing rock-paper-scissors"
-          }
+          Compress-Archive -Path package\* -DestinationPath Arena.zip -Force
 
       - uses: actions/upload-artifact@v4
         with:
-          name: IPD-Arena
+          name: Arena-${{ steps.game.outputs.key }}
           path: arena/package/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Arena-Practice
-          path: arena/practice/
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: |
-            arena/IPD-Arena.zip
-            arena/Arena-Practice.zip
+          files: arena/Arena.zip
