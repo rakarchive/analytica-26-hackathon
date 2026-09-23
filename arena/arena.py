@@ -115,7 +115,8 @@ class Arena(BaseApp):
 
         f = actions_for("bots")
         for key, text, cmd in (("add", "+ Add bot", self.add_bot), ("check", "Check", self.check),
-                               ("checkall", "Check all", self.check_all)):
+                               ("checkall", "Check all", self.check_all),
+                               ("keep", "Keep this version", self.keep_selected)):
             b = FlatButton(f, text, cmd)
             b.pack(side="left", padx=(0, 8))
             self.buttons[key] = b
@@ -200,6 +201,7 @@ class Arena(BaseApp):
         self.buttons["add"].set_enabled(idle)
         self.buttons["check"].set_enabled(idle and has_team)
         self.buttons["checkall"].set_enabled(idle and has_team)
+        self.buttons["keep"].set_enabled(idle and self._keep_target() is not None)
         self.buttons["run"].set_enabled(not self.working or self.state in ("running", "paused"))
         self.buttons["run"].config(text="Stop" if self.state in ("running", "paused")
                                    else "Run tournament")
@@ -212,7 +214,7 @@ class Arena(BaseApp):
         if self.view == "bots":
             if not any(s.get("added") for s in self.specs):
                 return "add your bot, then Check it"
-            return "Check a bot, or Run tournament"
+            return "Check a bot, or Run tournament. Keep this version before a big change"
         if self.view == "results":
             if not self.tour:
                 return "run a tournament to see results"
@@ -542,8 +544,35 @@ class Arena(BaseApp):
     def _log_breakdown(self, i):
         pass  # the standings view shows this properly
 
+    def _keep_target(self):
+        """The bot Keep this version acts on: the selected one, or the only
+        bot being worked on."""
+        if self.selected:
+            i = self.selected[-1]
+            return i if self.can_keep(i) else None
+        live = [i for i in range(self.n) if self.can_keep(i)]
+        return live[0] if len(live) == 1 else None
+
+    def keep_selected(self):
+        i = self._keep_target()
+        if i is not None:
+            self.keep_version(i)
+
+    def _compare_with_kept(self):
+        """After a run, open the comparison a team wants: the bot they are
+        working on against the version of it they kept most recently."""
+        if self.selected:
+            return
+        by_name = {s["name"]: k for k, s in enumerate(self.specs)}
+        kept = [(s.get("kept_order", 0), k) for k, s in enumerate(self.specs)
+                if s.get("kept_from") in by_name]
+        if kept:
+            _, k = max(kept)
+            self.selected = [by_name[self.specs[k]["kept_from"]], k]
+
     def _finished(self, ranks, stats):
         super()._finished(ranks, stats)
+        self._compare_with_kept()
         if self.run_info.get("out"):
             self._append_log(f"Saved to {self.run_info['out']}", UP)
         self.show_view("results")

@@ -552,6 +552,7 @@ class BaseApp:
                               insertbackground=FG, cursor="arrow")
         self.logbox.bind("<Key>", lambda e: "break" if e.keysym not in ("c", "C") else None)
         self.menu = tk.Menu(self.root, tearoff=0)
+        self.menu.add_command(label="Keep this version", command=lambda: self.keep_version(self.menu_target))
         self.menu.add_command(label="Check protocol", command=lambda: self.check(self.menu_target))
         self.menu.add_command(label="Edit run command…", command=lambda: self.edit_cmd(self.menu_target))
         self.menu.add_command(label="Remove", command=lambda: self.remove_bot(self.menu_target))
@@ -1124,6 +1125,46 @@ class BaseApp:
         self._field_changed()
         self.log("Right-click a bot on the board to change its command. Next: Check.", DIM)
 
+    def can_keep(self, i):
+        spec = self.specs[i]
+        return (spec["kind"] == "team" and not spec.get("kept_from")
+                and bool(spec.get("source")) and os.path.isfile(spec["source"]))
+
+    def keep_version(self, i):
+        """Freeze a bot's code as it is now: a copy joins the field as a fixed
+        opponent, "my_bot (v1)", so every run shows whether the version being
+        worked on beats the last one kept. The copy goes in versions/ beside
+        the bot's file under the same file name (Java needs the class and the
+        file to match), and stays there for next time."""
+        if not self.can_keep(i):
+            return
+        spec = self.specs[i]
+        src = spec["source"]
+        stem = os.path.splitext(os.path.basename(src))[0]
+        root = os.path.join(os.path.dirname(src), "versions")
+        taken = [s.get("version", 0) for s in self.team_specs if s.get("kept_from") == spec["name"]]
+        k = max(taken, default=0) + 1
+        while os.path.exists(os.path.join(root, f"{stem}-v{k}")):
+            k += 1                      # versions kept in an earlier session
+        folder = os.path.join(root, f"{stem}-v{k}")
+        try:
+            os.makedirs(folder)
+            shutil.copy2(src, folder)
+        except OSError as e:
+            self.log(f"Could not keep a copy of {os.path.basename(src)}: {e}", DOWN)
+            return
+        kept = user_bot_spec(os.path.join(folder, os.path.basename(src)), f"{spec['name']} (v{k})")
+        self.keeps = getattr(self, "keeps", 0) + 1
+        kept.update(added=True, kept_from=spec["name"], version=k, kept_order=self.keeps)
+        if spec["name"] in self.check_status:
+            self.check_status[kept["name"]] = self.check_status[spec["name"]]  # the same code
+        # Next to the bot it came from, newest first.
+        at = self.team_specs.index(spec) + 1 if spec in self.team_specs else len(self.team_specs)
+        self.team_specs.insert(at, kept)
+        self._field_changed()
+        self.log(f"Kept {spec['name']} as it is now: {kept['name']} will stay exactly like this. "
+                 f"Keep editing {os.path.basename(src)}; after each run, Results compares the two.", UP)
+
     def remove_bot(self, i):
         spec = self.specs[i]
         if spec in self.team_specs:
@@ -1154,6 +1195,8 @@ class BaseApp:
         if self.presenting or self.specs[i]["kind"] != "team" or self.working:
             return
         self.menu_target = i
+        self.menu.entryconfigure("Keep this version",
+                                 state="normal" if self.can_keep(i) else "disabled")
         self.menu.tk_popup(event.x_root, event.y_root)
 
     def _log_breakdown(self, i):
