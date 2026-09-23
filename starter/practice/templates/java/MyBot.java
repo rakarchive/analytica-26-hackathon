@@ -6,7 +6,7 @@
 import java.util.Scanner;
 
 public class MyBot {
-    static String my = "";   // your moves so far this match (as they came out, after noise)
+    static String my = "";   // your moves so far this match, like "RPPS" (as they came out, after noise)
     static String opp = "";  // your opponent's moves so far this match
 
     // Return 'R', 'P' or 'S'. This plays rock first, then whatever beats

@@ -6,7 +6,7 @@
 #include <iostream>
 #include <string>
 
-std::string my;   // your moves so far this match (as they came out, after noise)
+std::string my;   // your moves so far this match, like "CCDC" (as they came out, after noise)
 std::string opp;  // your opponent's moves so far this match
 
 // Return 'C' or 'D'. This plays tit-for-tat: cooperate first, then

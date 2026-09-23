@@ -6,7 +6,7 @@
 #include <iostream>
 #include <string>
 
-std::string my;   // your moves so far this match (as they came out, after noise)
+std::string my;   // your moves so far this match, like "RPPS" (as they came out, after noise)
 std::string opp;  // your opponent's moves so far this match
 
 // Return 'R', 'P' or 'S'. This plays rock first, then whatever beats

@@ -4,8 +4,8 @@
 
 import sys
 
-my = []   # your moves so far this match (as they came out, after noise)
-opp = []  # your opponent's moves so far this match
+my = ""   # your moves so far this match, like "RPPS" (as they came out, after noise)
+opp = ""  # your opponent's moves so far this match
 
 BEATS = {"R": "P", "P": "S", "S": "R"}  # what beats each move: paper beats rock, ...
 
@@ -23,12 +23,12 @@ for line in sys.stdin:
     if not words:
         continue
     if words[0] == "RESET":          # a new match: forget the last one
-        my.clear()
-        opp.clear()
+        my = ""
+        opp = ""
     elif words[0] == "ROUND":
         if words[1] != "-":          # "-" means the first round: nothing to record
-            my.append(words[1])
-            opp.append(words[2])
+            my += words[1]
+            opp += words[2]
         print(choose(), flush=True)  # flush=True is required
     elif words[0] == "END":
         break
