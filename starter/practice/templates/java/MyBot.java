@@ -1,89 +1,42 @@
-// Practice bot (Java). Build and run with:
+// A bot in Java. Build and run it with:
 //     javac MyBot.java
 //     java MyBot
-//
-// The protocol plumbing is done: edit choose() and leave main() alone
-// unless you know why. System.out is ONLY for moves; debug to System.err.
+// Print only your moves. For debugging, use System.err.println(...) instead.
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.Scanner;
 
 public class MyBot {
-    static final char ROCK = 'R', PAPER = 'P', SCISSORS = 'S';
-    static final Map<Character, Character> BEATEN_BY = new HashMap<>();
-    static {
-        BEATEN_BY.put(ROCK, PAPER);
-        BEATEN_BY.put(PAPER, SCISSORS);
-        BEATEN_BY.put(SCISSORS, ROCK);
+    static String my = "";   // your moves so far this match (as they came out, after noise)
+    static String opp = "";  // your opponent's moves so far this match
+
+    // Return 'R', 'P' or 'S'. This plays rock first, then whatever beats
+    // the opponent's last move.
+    static char choose() {
+        if (opp.isEmpty()) return 'R';
+        char last = opp.charAt(opp.length() - 1);
+        if (last == 'R') return 'P';  // paper beats rock
+        if (last == 'P') return 'S';  // scissors beat paper
+        return 'R';                   // rock beats scissors
     }
 
-    final Random rng = new Random();
-    // Your ACTUAL moves so far (after noise) and the opponent's, oldest first.
-    List<Character> my = new ArrayList<>();
-    List<Character> opp = new ArrayList<>();
-
-    // New match. Clear everything that belongs to one opponent. Keeping
-    // state across matches is against the rules.
-    void reset() {
-        my.clear();
-        opp.clear();
-    }
-
-    // Return R, P or S for the next round.
-    char choose() {
-        return beatTheirLast();
-    }
-
-    // ---- a few to start from ----
-
-    char randomMove() {
-        return "RPS".charAt(rng.nextInt(3));
-    }
-
-    char beatTheirLast() {
-        return opp.isEmpty() ? ROCK : BEATEN_BY.get(opp.get(opp.size() - 1));
-    }
-
-    char beatTheirFavourite() {
-        if (opp.isEmpty()) return ROCK;
-        char best = ROCK;
-        int bestCount = -1;
-        for (char m : new char[] {ROCK, PAPER, SCISSORS}) {
-            int count = 0;
-            for (char x : opp) if (x == m) count++;
-            if (count > bestCount) { bestCount = count; best = m; }
-        }
-        return BEATEN_BY.get(best);
-    }
-
-    public static void main(String[] args) throws IOException {
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
-        MyBot bot = new MyBot();
-        String line;
-        while ((line = in.readLine()) != null) {
-            String[] parts = line.trim().split("\\s+");
-            switch (parts[0]) {
-                case "RESET":
-                    bot.reset();
-                    break;
-                case "ROUND":
-                    if (!parts[1].equals("-")) {
-                        bot.my.add(parts[1].charAt(0));
-                        bot.opp.add(parts[2].charAt(0));
-                    }
-                    System.out.println(bot.choose());
-                    System.out.flush(); // NOT optional
-                    break;
-                case "END":
-                    return;
-                default:
-                    break;
+    public static void main(String[] args) {
+        Scanner in = new Scanner(System.in);
+        while (in.hasNext()) {
+            String command = in.next();
+            if (command.equals("RESET")) {          // a new match: forget the last one
+                my = "";
+                opp = "";
+            } else if (command.equals("ROUND")) {
+                String mine = in.next();
+                String theirs = in.next();
+                if (!mine.equals("-")) {            // "-" means the first round: nothing to record
+                    my += mine;
+                    opp += theirs;
+                }
+                System.out.println(choose());
+                System.out.flush();                 // required
+            } else if (command.equals("END")) {
+                break;
             }
         }
     }

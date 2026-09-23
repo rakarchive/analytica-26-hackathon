@@ -1,74 +1,36 @@
-// Starter bot (C++). Build and run with:
+// A bot in C++. Build and run it with:
 //     g++ -O2 -std=c++17 -o my_bot my_bot.cpp
-//     ./my_bot                       (my_bot.exe on Windows)
-//
-// The protocol plumbing is done: edit choose() and leave main() alone
-// unless you know why. std::cout is ONLY for moves; debug to std::cerr.
+//     my_bot
+// Print only your moves. For debugging, use std::cerr instead.
 
 #include <iostream>
-#include <random>
-#include <sstream>
 #include <string>
-#include <vector>
 
-const char C = 'C', D = 'D';
+std::string my;   // your moves so far this match (as they came out, after noise)
+std::string opp;  // your opponent's moves so far this match
 
-struct Bot {
-    std::mt19937 rng{std::random_device{}()};
-    // Your ACTUAL moves so far (after noise) and the opponent's, oldest first.
-    std::vector<char> my, opp;
-
-    // New match. Clear everything that belongs to one opponent. Keeping
-    // state across matches is against the rules.
-    void reset() {
-        my.clear();
-        opp.clear();
-    }
-
-    // Return C or D for the next round. Default: generous tit-for-tat.
-    char choose() {
-        return generous_tft(1.0 / 3);
-    }
-
-    // ---- the textbook floor; beat these ----
-
-    char tit_for_tat() {
-        return opp.empty() ? C : opp.back();
-    }
-
-    char generous_tft(double p) {
-        if (opp.empty() || opp.back() == C) return C;
-        return random01() < p ? C : D;
-    }
-
-    char pavlov() {
-        if (my.empty()) return C;
-        bool won = opp.back() == C;
-        return won ? my.back() : (my.back() == C ? D : C);
-    }
-
-    double random01() {
-        return std::uniform_real_distribution<double>(0.0, 1.0)(rng);
-    }
-};
+// Return 'C' or 'D'. This plays tit-for-tat: cooperate first, then
+// copy whatever the opponent did last round.
+char choose() {
+    if (opp.empty()) return 'C';
+    return opp.back();
+}
 
 int main() {
-    Bot bot;
-    std::string line;
-    while (std::getline(std::cin, line)) {
-        std::istringstream in(line);
-        std::string cmd, mine, theirs;
-        in >> cmd;
-        if (cmd == "RESET") {
-            bot.reset();
-        } else if (cmd == "ROUND") {
-            in >> mine >> theirs;
-            if (mine != "-") {
-                bot.my.push_back(mine[0]);
-                bot.opp.push_back(theirs[0]);
+    std::string command;
+    while (std::cin >> command) {
+        if (command == "RESET") {                 // a new match: forget the last one
+            my = "";
+            opp = "";
+        } else if (command == "ROUND") {
+            std::string mine, theirs;
+            std::cin >> mine >> theirs;
+            if (mine != "-") {                    // "-" means the first round: nothing to record
+                my += mine;
+                opp += theirs;
             }
-            std::cout << bot.choose() << std::endl;  // endl flushes: NOT optional
-        } else if (cmd == "END") {
+            std::cout << choose() << std::endl;   // std::endl flushes, which is required
+        } else if (command == "END") {
             break;
         }
     }

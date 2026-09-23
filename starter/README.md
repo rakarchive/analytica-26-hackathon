@@ -41,10 +41,11 @@ The `templates` folder has a working bot in each language:
 | C | `c/my_bot.c` | `gcc -O2 -o my_bot my_bot.c -lm` |
 | C++ | `cpp/my_bot.cpp` | `g++ -O2 -std=c++17 -o my_bot my_bot.cpp` |
 
-Each one already handles the protocol and plays generous tit-for-tat.
-Tit-for-tat and Pavlov are included too. Copy the one for your language and
-change how it chooses its move. Keep your bot in that one file: it is what you
-submit. In Java, any extra classes go inside `MyBot.java`.
+Each one is short, handles the protocol, and plays tit-for-tat: cooperate
+first, then copy the opponent's last move. Copy the one for your language and
+rewrite `choose()`, which is where the move is picked. Keep your bot in that
+one file: it is what you submit. In Java, any extra classes go inside
+`MyBot.java`.
 
 ## The Arena
 

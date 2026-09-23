@@ -161,10 +161,10 @@ sends):
 
 The starter pack has:
 
-- *Templates* in Python, Java, C and C++, in `templates/`. Each one already
-  handles the protocol and plays generous tit-for-tat, with tit-for-tat and Pavlov included to switch to.
-  Copy the one for your language and change how it chooses its move. These are
-  the textbook answers, the floor to build on.
+- *Templates* in Python, Java, C and C++, in `templates/`. Each one is short,
+  handles the protocol, and plays tit-for-tat: cooperate first, then copy the
+  opponent's last move. Copy the one for your language and rewrite
+  `choose()`.
 - *The Arena* (`Arena.exe`). It runs your bot the same way the tournament does,
   against sparring partners and against your own bots, and tells you whether a
   change really helped or whether you haven't played enough matches to know.
