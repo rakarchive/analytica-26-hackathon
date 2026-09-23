@@ -6,14 +6,17 @@
 #include <iostream>
 #include <string>
 
-std::string my;   // your moves so far this match, like "CCDC" (as they came out, after noise)
+std::string my;   // your moves so far this match, like "RPPS" (as they came out, after noise)
 std::string opp;  // your opponent's moves so far this match
 
-// Return 'C' or 'D'. This plays tit-for-tat: cooperate first, then
-// copy whatever the opponent did last round.
+// Return 'R', 'P' or 'S'. This plays rock first, then whatever beats
+// the opponent's last move.
 char choose() {
-    if (opp.empty()) return 'C';
-    return opp.back();
+    if (opp.empty()) return 'R';
+    char last = opp.back();
+    if (last == 'R') return 'P';  // paper beats rock
+    if (last == 'P') return 'S';  // scissors beat paper
+    return 'R';                   // rock beats scissors
 }
 
 int main() {

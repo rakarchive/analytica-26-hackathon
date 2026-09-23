@@ -1,14 +1,14 @@
 {
  "bots": {
-  "Tit4Tat Fans": "plain tit-for-tat",
-  "The Defectors": "always defects",
-  "The Generous": "tit-for-tat, forgives a third of defections",
-  "Pavlov's Dogs": "win-stay, lose-shift",
-  "Noise Cancellers": "contrite tit-for-tat: ignores retaliation it caused itself",
-  "Two Strikes": "tit-for-two-tats: retaliates only after two in a row",
-  "Majority Rule": "cooperates while the opponent mostly has",
-  "Detectives": "probes early, then copies or exploits",
-  "Bayes Watch": "predicts each reply, takes the better option",
-  "Axelrod Acolytes": "classifies the opponent, then exploits or reciprocates"
+  "Rock Solid": "rock, every round",
+  "Round Robin": "rock, paper, scissors, in order",
+  "Dice Rollers": "uniformly random",
+  "Last Word": "beats the opponent's last move",
+  "Frequentists": "beats the opponent's favourite move",
+  "Short Memory": "beats the favourite of the last 10 rounds",
+  "Markov Chains": "predicts from what usually follows",
+  "Win-Stay": "keeps a winning move, else beats their last",
+  "Second Guessers": "beats the move that would beat its last",
+  "Iocaine Powder": "follows whichever predictor is working"
  }
 }

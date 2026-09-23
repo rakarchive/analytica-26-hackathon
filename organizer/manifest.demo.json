@@ -1,12 +1,22 @@
 {
  "bots": [
   {
-   "name": "Byzantine Generals",
+   "name": "Paper Tigers",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Grim Reapers",
+   "name": "Scissor Sisters",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Rockefellers",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "The Undecided",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
@@ -16,32 +26,7 @@
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Tit4Tat Fans",
-   "dir": "../starter/templates/python",
-   "run": "python3 my_bot.py"
-  },
-  {
-   "name": "The Defectors",
-   "dir": "../starter/templates/python",
-   "run": "python3 my_bot.py"
-  },
-  {
-   "name": "Pavlov's Dogs",
-   "dir": "../starter/templates/python",
-   "run": "python3 my_bot.py"
-  },
-  {
-   "name": "Axelrod Acolytes",
-   "dir": "../starter/templates/python",
-   "run": "python3 my_bot.py"
-  },
-  {
-   "name": "Noise Cancellers",
-   "dir": "../starter/templates/python",
-   "run": "python3 my_bot.py"
-  },
-  {
-   "name": "Forgive & Forget",
+   "name": "Mixed Strategy",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
@@ -56,47 +41,62 @@
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Prisoners of Zenda",
+   "name": "Stone Cold",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Cooperative Kernel",
+   "name": "Cut Above",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Bayes Watch",
+   "name": "Sheet Happens",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Zero Determinants",
+   "name": "Rock Bottom",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Trust Issues",
+   "name": "Paper Trail",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "The Generous",
+   "name": "Sharp Minds",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Stochastic Squad",
+   "name": "Blunt Instruments",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Hawk & Dove",
+   "name": "Heads or Tails",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },
   {
-   "name": "Mixed Strategy",
+   "name": "Coin Flippers",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Pattern Seekers",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "The Predictables",
+   "dir": "../starter/templates/python",
+   "run": "python3 my_bot.py"
+  },
+  {
+   "name": "Random Access",
    "dir": "../starter/templates/python",
    "run": "python3 my_bot.py"
   },

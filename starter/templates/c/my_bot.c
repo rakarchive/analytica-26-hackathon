@@ -11,11 +11,14 @@ char my[10000];   /* your moves so far this match (as they came out, after noise
 char opp[10000];  /* your opponent's moves so far this match */
 int n = 0;        /* how many rounds have been played this match */
 
-/* Return 'C' or 'D'. This plays tit-for-tat: cooperate first, then
- * copy whatever the opponent did last round. */
+/* Return 'R', 'P' or 'S'. This plays rock first, then whatever beats
+ * the opponent's last move. */
 char choose(void) {
-    if (n == 0) return 'C';
-    return opp[n - 1];
+    if (n == 0) return 'R';
+    char last = opp[n - 1];
+    if (last == 'R') return 'P';  /* paper beats rock */
+    if (last == 'P') return 'S';  /* scissors beat paper */
+    return 'R';                   /* rock beats scissors */
 }
 
 int main(void) {

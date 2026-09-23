@@ -1,104 +1,54 @@
 {
  "bots": [
   {
-   "name": "Tit4Tat Fans",
+   "name": "Rock Solid",
    "dir": "simbots",
-   "run": "python3 tit_for_tat.py"
+   "run": "python3 rock_solid.py"
   },
   {
-   "name": "The Defectors",
+   "name": "Round Robin",
    "dir": "simbots",
-   "run": "python3 always_defect.py"
+   "run": "python3 round_robin.py"
   },
   {
-   "name": "Grim Reapers",
+   "name": "Dice Rollers",
    "dir": "simbots",
-   "run": "python3 grim_trigger.py"
+   "run": "python3 dice_rollers.py"
   },
   {
-   "name": "Stochastic Squad",
+   "name": "Last Word",
    "dir": "simbots",
-   "run": "python3 mostly_cooperate.py"
+   "run": "python3 last_word.py"
   },
   {
-   "name": "The Generous",
+   "name": "Frequentists",
    "dir": "simbots",
-   "run": "python3 generous_tft.py"
+   "run": "python3 frequentists.py"
   },
   {
-   "name": "Barely Generous",
+   "name": "Short Memory",
    "dir": "simbots",
-   "run": "python3 barely_generous.py"
+   "run": "python3 short_memory.py"
   },
   {
-   "name": "Pavlov's Dogs",
+   "name": "Markov Chains",
    "dir": "simbots",
-   "run": "python3 pavlov.py"
+   "run": "python3 markov_chains.py"
   },
   {
-   "name": "Noise Cancellers",
+   "name": "Win-Stay",
    "dir": "simbots",
-   "run": "python3 contrite_tft.py"
+   "run": "python3 win_stay.py"
   },
   {
-   "name": "Cooperative Kernel",
+   "name": "Second Guessers",
    "dir": "simbots",
-   "run": "python3 contrite_firm.py"
+   "run": "python3 second_guessers.py"
   },
   {
-   "name": "Two Strikes",
+   "name": "Iocaine Powder",
    "dir": "simbots",
-   "run": "python3 tit_for_two_tats.py"
-  },
-  {
-   "name": "Forgive & Forget",
-   "dir": "simbots",
-   "run": "python3 window_grudge.py"
-  },
-  {
-   "name": "Majority Rule",
-   "dir": "simbots",
-   "run": "python3 majority.py"
-  },
-  {
-   "name": "Gradual Escalation",
-   "dir": "simbots",
-   "run": "python3 gradual.py"
-  },
-  {
-   "name": "Joss Stick",
-   "dir": "simbots",
-   "run": "python3 joss.py"
-  },
-  {
-   "name": "Sneaky Snakes",
-   "dir": "simbots",
-   "run": "python3 sneaky.py"
-  },
-  {
-   "name": "Detectives",
-   "dir": "simbots",
-   "run": "python3 detective.py"
-  },
-  {
-   "name": "Trust Issues",
-   "dir": "simbots",
-   "run": "python3 prober.py"
-  },
-  {
-   "name": "Bayes Watch",
-   "dir": "simbots",
-   "run": "python3 bayes.py"
-  },
-  {
-   "name": "Axelrod Acolytes",
-   "dir": "simbots",
-   "run": "python3 adaptive.py"
-  },
-  {
-   "name": "Zero Determinants",
-   "dir": "simbots",
-   "run": "python3 zd_extort.py"
+   "run": "python3 iocaine.py"
   }
  ]
 }

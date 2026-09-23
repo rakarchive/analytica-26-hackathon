@@ -6,14 +6,17 @@
 import java.util.Scanner;
 
 public class MyBot {
-    static String my = "";   // your moves so far this match, like "CCDC" (as they came out, after noise)
+    static String my = "";   // your moves so far this match, like "RPPS" (as they came out, after noise)
     static String opp = "";  // your opponent's moves so far this match
 
-    // Return 'C' or 'D'. This plays tit-for-tat: cooperate first, then
-    // copy whatever the opponent did last round.
+    // Return 'R', 'P' or 'S'. This plays rock first, then whatever beats
+    // the opponent's last move.
     static char choose() {
-        if (opp.isEmpty()) return 'C';
-        return opp.charAt(opp.length() - 1);
+        if (opp.isEmpty()) return 'R';
+        char last = opp.charAt(opp.length() - 1);
+        if (last == 'R') return 'P';  // paper beats rock
+        if (last == 'P') return 'S';  // scissors beat paper
+        return 'R';                   // rock beats scissors
     }
 
     public static void main(String[] args) {

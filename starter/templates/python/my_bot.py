@@ -4,16 +4,18 @@
 
 import sys
 
-my = ""   # your moves so far this match, like "CCDC" (as they came out, after noise)
+my = ""   # your moves so far this match, like "RPPS" (as they came out, after noise)
 opp = ""  # your opponent's moves so far this match
+
+BEATS = {"R": "P", "P": "S", "S": "R"}  # what beats each move: paper beats rock, ...
 
 
 def choose():
-    """Return "C" or "D". This plays tit-for-tat: cooperate first, then
-    copy whatever the opponent did last round."""
+    """Return "R", "P" or "S". This plays rock first, then whatever beats
+    the opponent's last move."""
     if not opp:
-        return "C"
-    return opp[-1]
+        return "R"
+    return BEATS[opp[-1]]
 
 
 for line in sys.stdin:

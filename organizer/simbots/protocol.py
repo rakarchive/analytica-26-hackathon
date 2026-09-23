@@ -7,14 +7,19 @@ Each bot file in this folder is a complete submission: run it with
 import random
 import sys
 
-C, D = "C", "D"
+R, P, S = "R", "P", "S"
+MOVES = (R, P, S)
+BEATEN_BY = {R: P, P: S, S: R}   # what beats each move
+
+
+def beat(move):
+    return BEATEN_BY[move]
 
 
 class Bot:
     """Keeps the match history so strategies can stay short. Subclasses
     implement choose(); self.my and self.opp are the ACTUAL moves so far
-    (after noise), oldest first, and self.intent is what this bot meant
-    to play, which noise may have changed."""
+    (after noise), oldest first."""
 
     def __init__(self):
         self.rng = random.Random()
@@ -22,21 +27,17 @@ class Bot:
 
     def reset(self):
         """New match: forget everything about the last opponent."""
-        self.my, self.opp, self.intent = [], [], []
+        self.my, self.opp = [], []
         self.state = {}
-
-    def move(self):
-        m = self.choose()
-        self.intent.append(m)
-        return m
 
     def t(self):
         """The round about to be played, counting from 0."""
         return len(self.my)
 
-    def opp_d_rate(self, window=None):
+    def favourite(self, window=None):
+        """The opponent's most played move, over the last `window` rounds."""
         xs = self.opp[-window:] if window else self.opp
-        return xs.count(D) / len(xs) if xs else 0.0
+        return max(MOVES, key=xs.count) if xs else None
 
 
 def run(bot):
@@ -51,6 +52,6 @@ def run(bot):
             if p[1] != "-":
                 bot.my.append(p[1])
                 bot.opp.append(p[2])
-            print(bot.move(), flush=True)
+            print(bot.choose(), flush=True)
         elif p[0] == "END":
             break

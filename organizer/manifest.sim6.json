@@ -1,34 +1,34 @@
 {
  "bots": [
   {
-   "name": "Tit4Tat Fans",
+   "name": "Rock Solid",
    "dir": "simbots",
-   "run": "python3 tit_for_tat.py"
+   "run": "python3 rock_solid.py"
   },
   {
-   "name": "The Defectors",
+   "name": "Dice Rollers",
    "dir": "simbots",
-   "run": "python3 always_defect.py"
+   "run": "python3 dice_rollers.py"
   },
   {
-   "name": "The Generous",
+   "name": "Last Word",
    "dir": "simbots",
-   "run": "python3 generous_tft.py"
+   "run": "python3 last_word.py"
   },
   {
-   "name": "Noise Cancellers",
+   "name": "Short Memory",
    "dir": "simbots",
-   "run": "python3 contrite_tft.py"
+   "run": "python3 short_memory.py"
   },
   {
-   "name": "Bayes Watch",
+   "name": "Markov Chains",
    "dir": "simbots",
-   "run": "python3 bayes.py"
+   "run": "python3 markov_chains.py"
   },
   {
-   "name": "Axelrod Acolytes",
+   "name": "Iocaine Powder",
    "dir": "simbots",
-   "run": "python3 adaptive.py"
+   "run": "python3 iocaine.py"
   }
  ]
 }
