@@ -515,6 +515,7 @@ class FlatButton(tk.Label):
 # --------------------------------------------------------------------------
 
 class BaseApp:
+    _card_tag = "card"   # the tag card drawings go under (see _draw_check_card)
     """Board, stages, check cards, runs. Subclasses add their toolbar and,
     for the event app, the presentation."""
 
@@ -943,16 +944,16 @@ class BaseApp:
     def _pill(self, x, y, text, color, anchor="ne"):
         cv, s = self.cv, self.scale
         t = cv.create_text(x - 16 * s, y + 8 * s, text=text, anchor=anchor, fill=BG,
-                           font=self.f_card_label, tags="card")
+                           font=self.f_card_label, tags=self._card_tag)
         x0, y0, x1, y1 = cv.bbox(t)
         box = cv.create_rectangle(x0 - 14 * s, y0 - 6 * s, x1 + 14 * s, y1 + 6 * s, fill=color,
-                                  width=0, tags="card")
+                                  width=0, tags=self._card_tag)
         cv.tag_raise(t, box)
 
     def _status_dot(self, x, y, status, r):
         color, sym = self.STATUS_STYLE[status]
-        self.cv.create_oval(x - r, y - r, x + r, y + r, fill=color, width=0, tags="card")
-        self.cv.create_text(x, y, text=sym, fill=BG, font=self.f_card_label, tags="card")
+        self.cv.create_oval(x - r, y - r, x + r, y + r, fill=color, width=0, tags=self._card_tag)
+        self.cv.create_text(x, y, text=sym, fill=BG, font=self.f_card_label, tags=self._card_tag)
 
     def _draw_card(self):
         cv = self.cv
@@ -971,13 +972,13 @@ class BaseApp:
                            fill=FAINT, font=self.f_card_detail, tags="card")
         cv.tag_bind("card", "<Button-1>", lambda e: self.close_card())
 
-    def _draw_check_card(self, x, y, w, h, s):
-        cv, c = self.cv, self.card
+    def _draw_check_card(self, x, y, w, h, s, card=None):
+        cv, c = self.cv, (card if card is not None else self.card)
         pad = 28 * s
         cv.create_text(x + pad, y + 20 * s, text="PROTOCOL CHECK", anchor="nw", fill=FAINT,
-                       font=self.f_head, tags="card")
+                       font=self.f_head, tags=self._card_tag)
         cv.create_text(x + pad, y + 44 * s, text=c["name"], anchor="nw", fill=FG,
-                       font=self.f_stage_name, tags="card")
+                       font=self.f_stage_name, tags=self._card_tag)
         rep = c.get("report")
         if c["state"] == "building":
             self._pill(x + w, y + 24 * s, "BUILDING…", ACCENT)
@@ -1008,20 +1009,20 @@ class BaseApp:
                 break
             self._status_dot(x + pad + r, cy + r, status, r)
             t = cv.create_text(text_x, cy + r, text=label, anchor="w", fill=FG,
-                               font=self.f_card_label, tags="card")
+                               font=self.f_card_label, tags=self._card_tag)
             cy = cv.bbox(t)[3] + 2 * s
             if detail:
                 mono = "\n" in detail
                 d = cv.create_text(text_x, cy, text=detail, anchor="nw", width=w - (text_x - x) - pad,
-                                   fill=DIM, font=self.f_mono if mono else self.f_card_detail, tags="card")
+                                   fill=DIM, font=self.f_mono if mono else self.f_card_detail, tags=self._card_tag)
                 cy = cv.bbox(d)[3]
             cy += 12 * s
         if rep is not None and rep.stderr_tail and cy < limit_y:
             t = cv.create_text(text_x, cy, text="Last lines your bot wrote to stderr:", anchor="nw",
-                               fill=WARN, font=self.f_card_detail, tags="card")
+                               fill=WARN, font=self.f_card_detail, tags=self._card_tag)
             cy = cv.bbox(t)[3] + 4 * s
             cv.create_text(text_x, cy, text="\n".join(rep.stderr_tail[-8:]), anchor="nw", fill=DIM,
-                           width=w - (text_x - x) - pad, font=self.f_mono, tags="card")
+                           width=w - (text_x - x) - pad, font=self.f_mono, tags=self._card_tag)
         if rep is not None and rep.stats.latencies:
             speed = next((k for k in rep.checks if k.label == "Speed"), None)
             self._draw_speed_gauge(x + pad, y + h - 128 * s, w - 2 * pad, rep.stats.summary(), speed)
@@ -1035,27 +1036,27 @@ class BaseApp:
         status = speed.status if speed else "ok"
         self._status_dot(x + 13 * s, y + 13 * s, status, 13 * s)
         cv.create_text(x + 40 * s, y + 13 * s, text="Time per move", anchor="w", fill=FG,
-                       font=self.f_card_label, tags="card")
+                       font=self.f_card_label, tags=self._card_tag)
         by = y + 58 * s
         bh = 14 * s
         for a, b, color in ((0.01, 1, "#1f5c3a"), (1, harness.MOVE_TIMEOUT * 1000, "#6b5321"),
                             (harness.MOVE_TIMEOUT * 1000, 100, "#6b2724")):
-            cv.create_rectangle(px(a), by, px(b), by + bh, fill=color, width=0, tags="card")
+            cv.create_rectangle(px(a), by, px(b), by + bh, fill=color, width=0, tags=self._card_tag)
         limit = px(harness.MOVE_TIMEOUT * 1000)
-        cv.create_line(limit, by - 6 * s, limit, by + bh + 6 * s, fill=DOWN, width=2, tags="card")
+        cv.create_line(limit, by - 6 * s, limit, by + bh + 6 * s, fill=DOWN, width=2, tags=self._card_tag)
         for ms, label in ((0.01, "0.01"), (0.1, "0.1"), (1, "1"), (10, "10"), (50, "50 ms limit")):
             cv.create_text(px(ms), by + bh + 8 * s, text=label, anchor="n",
-                           fill=DOWN if ms == 50 else FAINT, font=self.f_card_detail, tags="card")
+                           fill=DOWN if ms == 50 else FAINT, font=self.f_card_detail, tags=self._card_tag)
         # Values go in a legend: on a fast bot the three markers sit on top of each other.
         lx = x + 250 * s
         for key, label, color in (("mean_ms", "mean", UP), ("p99_ms", "p99", WARN), ("max_ms", "max", FG)):
             mx = px(st[key])
             cv.create_polygon(mx - 7 * s, by - 14 * s, mx + 7 * s, by - 14 * s, mx, by - 2 * s,
-                              fill=color, outline=BG, width=1, tags="card")
+                              fill=color, outline=BG, width=1, tags=self._card_tag)
             cv.create_polygon(lx, y + 7 * s, lx + 14 * s, y + 7 * s, lx + 7 * s, y + 19 * s,
-                              fill=color, width=0, tags="card")
+                              fill=color, width=0, tags=self._card_tag)
             t = cv.create_text(lx + 20 * s, y + 13 * s, text=f"{label} {st[key]:.2f} ms", anchor="w",
-                               fill=color, font=self.f_card_detail, tags="card")
+                               fill=color, font=self.f_card_detail, tags=self._card_tag)
             lx = cv.bbox(t)[2] + 22 * s
 
     def _draw_summary_card(self, x, y, w, h, s):
