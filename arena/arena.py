@@ -33,12 +33,12 @@ from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,
                 BaseApp, FlatButton, adopt_portable_tools, baseline_specs, default_workers,
                 user_bot_spec)
 
-# Where tournaments are saved unless Options says otherwise: one numbered file
+# Where tournaments are saved unless Advanced says otherwise: one numbered file
 # per run, so there is never an old one in the way.
 TOURNAMENT_DIR = os.path.join(tempfile.gettempdir(), "arena-tournaments")
 
 # One screen: the board, and beside it a panel whose tabs follow what is
-# picked on the board. Everything else lives under Options.
+# picked on the board. Everything else lives under Advanced.
 TABS = {0: (("results", "Results"), ("check", "Check"), ("matches", "Matches")),
         1: (("results", "Results"), ("check", "Check"), ("matches", "Matches")),
         2: (("results", "Compare"), ("matches", "Matches"))}
@@ -102,22 +102,22 @@ class Arena(BaseApp):
     def _build_toolbar(self, tb):
         bar = tk.Frame(tb, bg=BG)
         bar.pack(fill="x")
+        # The bot buttons sit under the board, placed there at each layout.
         for key, text, cmd in (("add", "+ Add bot", self.add_bot),
                                ("keep", "Keep this version", self.keep_selected)):
-            b = FlatButton(bar, text, cmd)
-            b.pack(side="left", padx=(0, 8))
-            self.buttons[key] = b
+            self.buttons[key] = FlatButton(self.cv, text, cmd)
         # Buttons that sit in the panel's tabs, placed there at each layout.
         self.panel_buttons = {"check": FlatButton(self.cv, "Check", self.check),
                               "checkall": FlatButton(self.cv, "Check all", self.check_all),
                               "back": FlatButton(self.cv, "‹ All matches", self.close_match)}
 
+        # Run and Advanced on the right; the help line centred over the board
+        # (placed at each layout, since the board's width follows the window's).
+        self.opt_button = FlatButton(bar, "Advanced ▸", self.toggle_options)
+        self.opt_button.pack(side="right")
         self.buttons["run"] = FlatButton(bar, "Run tournament", self.run_or_stop, primary=True)
-        self.buttons["run"].pack(side="left", padx=(16, 8))
-        self.opt_button = FlatButton(bar, "Options ▸", self.toggle_options)
-        self.opt_button.pack(side="left")
+        self.buttons["run"].pack(side="right", padx=(0, 8))
         self.hint = self._label(bar, "", FAINT)
-        self.hint.pack(side="left", padx=14)
 
         # Everything you rarely touch, in one place.
         opt = self.options = tk.Frame(tb, bg=PANEL, padx=14, pady=10, highlightthickness=1,
@@ -160,7 +160,7 @@ class Arena(BaseApp):
             self.options.pack(fill="x", pady=(10, 0))
         else:
             self.options.pack_forget()
-        self.opt_button.config(text="Options ▾" if self.options_open else "Options ▸")
+        self.opt_button.config(text="Advanced ▾" if self.options_open else "Advanced ▸")
         self.layout()
 
     def _refresh_buttons(self):
@@ -230,6 +230,7 @@ class Arena(BaseApp):
         self.state = "final"
         self.run_info = {"reps": tour.reps, "seed": tour.seed, "out": path,
                          "ref_weight": self.num(self.weight_var, float, 1.0)}
+        self.side_tab, self.viewing = "results", None   # an opened tournament shows its results
         self.log(f"Opened {len(tour):,} matches from {os.path.basename(path)} "
                  f"({tour.n} bots, {tour.reps} per pairing, seed {tour.seed}).", UP)
         if not tour.complete():
@@ -300,7 +301,19 @@ class Arena(BaseApp):
         panel, with tabs that follow what is picked, above the log."""
         avail = H - top - m
         bw = W * 0.5
-        self.board = (m, top, bw - m / 2, H - m)
+        # Under the board: its buttons, centred. Over it: the help line.
+        s = self.scale
+        add, keep = self.buttons["add"], self.buttons["keep"]
+        row_h = max(add.winfo_reqheight(), keep.winfo_reqheight())
+        bottom = H - m - row_h - 12 * s
+        self.board = (m, top, bw - m / 2, bottom)
+        cx = (m + bw - m / 2) / 2
+        gap = 10 * s
+        left = cx - (add.winfo_reqwidth() + gap + keep.winfo_reqwidth()) / 2
+        self.cv.create_window(left, H - m, window=add, anchor="sw")
+        self.cv.create_window(left + add.winfo_reqwidth() + gap, H - m, window=keep, anchor="sw")
+        self.hint.place(x=cx - m, rely=0.5, anchor="center")
+        self._refresh_buttons()     # the help line and what can be pressed follow the layout
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
         panel_h = avail * 0.64
         self.card_box = (rx, top, rw, panel_h)
