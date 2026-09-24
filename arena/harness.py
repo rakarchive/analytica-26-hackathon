@@ -183,6 +183,8 @@ class ProcessPlayer:
         if self.proc is None:
             return
         try:
+            if self.proc.poll() is None:
+                kill_tree(self.proc.pid)
             self.proc.kill()
             self.proc.wait(timeout=2)
         except Exception:
@@ -796,6 +798,19 @@ def projected_seconds(mean_latencies, n_bots, reps, workers):
 # Each worker process keeps its own long-lived instance of every bot it has
 # met (two for self-play) and reuses them across matches via RESET.
 
+def kill_tree(pid):
+    """Kill a process and everything it started. On Windows a bot often runs
+    under a launcher (py.exe, or a one-file exe that unpacks itself and runs
+    a second process), and killing just the launcher would leave the bot
+    itself running, orphaned. Elsewhere the process is killed by its caller."""
+    if WINDOWS:
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True,
+                           timeout=10, creationflags=POPEN_FLAGS)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 def code_hash(spec):
     """A fingerprint of a bot's code: its source file, or failing that the
     first file its command names. A tournament is only carried on with the
@@ -942,5 +957,6 @@ def run_round_robin(specs, reps, seed=0, workers=1, self_play=False,
         for p in procs:
             p.join(timeout=0 if stop is not None and stop.is_set() else 5)
             if p.is_alive():
+                kill_tree(p.pid)    # with the bots it started
                 p.terminate()
     return points, rounds, stats

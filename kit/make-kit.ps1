@@ -244,8 +244,14 @@ if (Test-Path $gpp) {
 $arenaExe = Join-Path $kit "Arena.exe"
 if (Test-Path $arenaExe) {
     $report = Join-Path $cache "selftest.txt"
-    $p = Start-Process -FilePath $arenaExe -ArgumentList '--selftest', $report -Wait -PassThru
-    Get-Content $report
+    # Wait for Arena.exe alone, with a limit: -Wait would also wait for any
+    # process it started, forever if one were left behind.
+    $p = Start-Process -FilePath $arenaExe -ArgumentList '--selftest', "`"$report`"" -PassThru
+    $null = $p.Handle
+    $finished = $p.WaitForExit(240000)
+    if (-not $finished) { taskkill /PID $p.Id /T /F | Out-Null }
+    if (Test-Path $report) { Get-Content $report }
+    if (-not $finished) { throw "Arena.exe self-test did not finish within 4 minutes" }
     if ($p.ExitCode -ne 0) { throw "Arena.exe self-test failed" }
 }
 

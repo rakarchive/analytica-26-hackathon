@@ -758,29 +758,58 @@ for line in sys.stdin:
 """
 
 
+SELFTEST_TIMEOUT = 150   # seconds before a stuck self-test reports where it is and gives up
+
+
 def selftest(report_path):
     """Headless check of a packaged build: a small round robin with a real
     subprocess bot, exercising worker processes and bot plumbing. Used by CI,
-    where a windowed exe has no console, so the result goes to a file."""
-    lines, ok = [], False
+    where a windowed exe has no console, so the result goes to a file. The
+    report is written as it goes, so a run that hangs still says how far it
+    got; after SELFTEST_TIMEOUT seconds every thread's stack is added to it
+    and the process exits."""
+    import faulthandler
+    ok = False
+    t0 = time.perf_counter()
+    report = open(report_path, "w", buffering=1)
+
+    def say(line):
+        report.write(f"[{time.perf_counter() - t0:6.1f}s] {line}\n")
+        report.flush()
+
+    faulthandler.dump_traceback_later(SELFTEST_TIMEOUT, exit=True, file=report)
     try:
         folder = tempfile.mkdtemp()
         with open(os.path.join(folder, "selftest_bot.py"), "w") as f:
             f.write(SELFTEST_BOT.format(first=harness.GAME.moves[0]))
         bot = user_bot_spec(os.path.join(folder, "selftest_bot.py"), "selftest_bot")
-        lines.append(f"game: {harness.GAME.key} · python: {bot['cmd'][0]}")
+        say(f"game: {harness.GAME.key} · python: {bot['cmd'][0]}")
+        say(f"bot command: {harness.join_cmd(bot['cmd'])}")
+        rep = harness.smoke_test(bot["cmd"], cwd=bot["cwd"], rounds=50)
+        say(f"protocol check: {rep.worst}")
+        for line in rep.lines():
+            say("    " + line)
         specs = [bot] + baseline_specs()
-        points, rounds, stats = harness.run_round_robin(specs, 2, seed=1, workers=2, log_dir=folder)
+        say(f"round robin: {len(specs)} bots, 2 per pairing, 2 workers")
+        marks = set()
+
+        def progress(done, total, secs):
+            step = done * 4 // max(1, total)
+            if step not in marks:
+                marks.add(step)
+                say(f"  {done} of {total} matches")
+        points, rounds, stats = harness.run_round_robin(specs, 2, seed=1, workers=2, log_dir=folder,
+                                                        progress=progress)
         st = stats[0].summary()
         per_round = sum(points[0]) / max(1, sum(rounds[0]))
-        lines.append(f"selftest_bot: {per_round:.3f} pts/round, {st['moves']} moves, "
-                     f"{st['timeouts']} timeouts, {st['crashes']} crashes")
+        say(f"selftest_bot: {per_round:.3f} pts/round, {st['moves']} moves, "
+            f"{st['timeouts']} timeouts, {st['crashes']} crashes")
         ok = st["moves"] > 0 and not st["crashes"] and not st["timeouts"] and per_round > 0
     except Exception:
-        lines.append(traceback.format_exc())
-    lines.append("PASS" if ok else "FAIL")
-    with open(report_path, "w") as f:
-        f.write("\n".join(lines) + "\n")
+        say(traceback.format_exc())
+    faulthandler.cancel_dump_traceback_later()
+    say("PASS" if ok else "FAIL")
+    report.close()
     return 0 if ok else 1
 
 
