@@ -16,3 +16,6 @@ output.mp4
 
 # Versions teams keep with the Arena (Keep this version)
 versions/
+
+# The local run of the GitHub workflow (ci/local_workflow.py): its tools and runs
+.ci/
