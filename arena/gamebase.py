@@ -53,8 +53,10 @@ class Game:
         """The numbers the show's finder ranks a match by: the story's
         metrics, the points gap, and "drama" for filling up the show once
         the highlights' categories are used."""
+        import harness
         _, met = self.story(m["a"], m["b"], "", "")
-        met["gap"] = abs(m["pa"] - m["pb"]) / m["n"]
-        met.setdefault("forfeits", 0)
+        a, b = harness.match_scores(m)
+        met["gap"] = abs(a - b)
+        met["forfeits"] = met.get("forfeits", 0) + len(m.get("end", {}))   # it ended in a failure
         met["drama"] = met["gap"] * 2 + met["forfeits"]
         return met

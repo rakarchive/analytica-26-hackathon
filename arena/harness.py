@@ -29,7 +29,7 @@ import time
 from dataclasses import dataclass, field
 
 from rules import GAME   # the game being played: see rules.py
-MOVE_TIMEOUT = 0.050     # hard per-move limit; overrun forfeits the round (see play_match)
+MOVE_TIMEOUT = 0.050     # hard per-move limit; too slow ends the match, like a crash (see play_match)
 STARTUP_TIMEOUT = 10.0   # allowance for the first reply after (re)start: JVM etc.
 WINDOWS = sys.platform == "win32"
 # Stop each bot opening its own console window when launched from the GUI.
@@ -84,7 +84,7 @@ class BotStats:
     timeouts: int = 0
     junk_lines: int = 0   # non-move lines on stdout (debug prints etc.)
     crashes: int = 0
-    forfeits: int = 0     # rounds it was dead for, played as the forfeit move
+    forfeits: int = 0     # unused since matches end at a crash; kept so older files load
     disabled: bool = False
     latencies: list = field(default_factory=list)
     loaded: dict = None          # set when read back from a tournament file
@@ -125,6 +125,9 @@ class LocalPlayer:
         self.stats.moves += 1
         return self._pending, "ok"
 
+    def abandon(self):
+        pass
+
     def close(self):
         pass
 
@@ -158,7 +161,7 @@ class ProcessPlayer:
         self._lines = None
         self._fresh = False      # next reply gets the startup allowance
         self._late = False       # a timed-out reply is still owed
-        self._dead = False       # forfeit the rest of the current match
+        self._dead = False       # failed this match: it ends, and the next starts it afresh
         self._failed_starts = 0
 
     # ---- process lifecycle ----
@@ -301,22 +304,41 @@ class ProcessPlayer:
     def response(self):
         self.stats.moves += 1
         if self._dead:
-            self.stats.forfeits += 1
-            return GAME.forfeit, "dead"
+            return None, ("disabled" if self.stats.disabled else "dead")
         limit = self.startup_timeout if self._fresh else self.move_timeout
         got, at = self._read_move(self._sent_at + limit)
         if got in ("timeout", "late"):
             self.stats.timeouts += 1
-            self._late = got == "timeout"
-            return GAME.forfeit, "timeout"
+            self.last_error = "too slow"
+            if self._fresh:
+                # No first reply even with the startup allowance: a failed start,
+                # so a bot that never answers is out after a few, instead of
+                # costing the allowance again on every match.
+                self._failed_starts += 1
+                if self._failed_starts >= MAX_FAILED_STARTS:
+                    self.stats.disabled = True
+            return None, "timeout"
         if got == "eof":
             self._crash("exited mid-match")
-            return GAME.forfeit, "crash"
+            return None, "crash"
         if self._fresh:
             self._fresh, self._failed_starts = False, 0
         else:
             self.stats.latencies.append(at - self._sent_at)
         return got, "ok"
+
+    def abandon(self):
+        """Its match ended because it failed (a crash, or too slow): stop it,
+        so the next match starts it afresh with nothing left over."""
+        self._late = False
+        self._kill()
+        self._dead = True
+        try:                                 # where its stderr had got to, as for a crash
+            pos = self.stderr.tell()
+            if not self.crash_marks or self.crash_marks[-1] != pos:
+                self.crash_marks.append(pos)
+        except (AttributeError, OSError, ValueError):
+            pass
 
     def close(self):
         if self.proc is not None and self.proc.poll() is None:
@@ -360,44 +382,70 @@ def bot_seed(seed, rep, name, side):
 
 
 def play_match(a, b, flips, seed_a=None, seed_b=None, record=None):
-    """Play one match; returns (points_a, points_b, rounds). If `record` is a
-    list, one (intent_a, intent_b, flip_a, flip_b, status_a, status_b) tuple
-    is appended per round."""
+    """Play one match. It ends at the first round either bot fails to play:
+    a crash, a move over the time limit (too slow counts as a crash), or a
+    bot that can't start. That round isn't played.
+
+    Returns (points_a, points_b, rounds, rounds_a, rounds_b, ended): rounds
+    is how many were played, and each side's score for the match is its
+    points over its own rounds figure. A side that failed is divided by the
+    match's full length, so the rounds it didn't play count as zero for it;
+    the other is divided by the rounds played, so the failure neither helps
+    nor hurts it. `ended` says who failed and how: {"a": "crashed"}, or {}.
+
+    If `record` is a list, one (move_a, move_b, flip_a, flip_b) tuple is
+    appended per round played."""
     a.reset(seed_a)
     b.reset(seed_b)
     last_a = last_b = None
-    pa = pb = 0
+    pa = pb = played = 0
+    ended = {}
     for alt_a, alt_b in flips:
         # Ask both before waiting on either, so their think time overlaps.
         a.request(last_a, last_b)
         b.request(last_b, last_a)
         ma, status_a = a.response()
         mb, status_b = b.response()
+        if status_a != "ok" or status_b != "ok":
+            for side, status, player in (("a", status_a, a), ("b", status_b, b)):
+                if status != "ok":
+                    ended[side] = {"timeout": "too slow", "disabled": "couldn't start"}.get(status, "crashed")
+                    player.abandon()
+            break
         if alt_a is not None:
             ma = noisy(ma, alt_a)   # noise: it comes out as something else
         if alt_b is not None:
             mb = noisy(mb, alt_b)
         if record is not None:
-            record.append((ma, mb, alt_a is not None, alt_b is not None, status_a, status_b))
+            record.append((ma, mb, alt_a is not None, alt_b is not None))
         sa, sb = GAME.payoff[ma, mb]
-        # A forfeited round (timeout, crash, dead bot) still gives the opponent
-        # a real move to play against, but scores 0 for the forfeiter. Otherwise
-        # a broken bot is just a bot that always plays the forfeit move.
-        pa += sa if status_a == "ok" else 0
-        pb += sb if status_b == "ok" else 0
+        pa += sa
+        pb += sb
+        played += 1
         last_a, last_b = ma, mb
-    return pa, pb, len(flips)
+    full = len(flips)
+    return (pa, pb, played, full if "a" in ended else played, full if "b" in ended else played, ended)
+
+
+def match_rounds(m):
+    """Each side's rounds figure for a match record (see play_match)."""
+    n = m["n"]
+    return m.get("na", n), m.get("nb", n)
+
+
+def match_scores(m):
+    """Each side's points per round in a match record: what it got over its
+    own rounds figure (see play_match)."""
+    na, nb = match_rounds(m)
+    return (m["pa"] / na if na else 0.0, m["pb"] / nb if nb else 0.0)
 
 
 def encode_record(record):
     """Compact per-side move strings for replaying a match: the move as it
-    came out, lowercase if noise changed it, '#' if the bot forfeited."""
+    came out, lowercase if noise changed it. (Files from before matches
+    ended at a crash may also hold '#', a forfeited round.)"""
     def side(k):
-        out = []
-        for r in record:
-            move, changed, status = r[k], r[2 + k], r[4 + k]
-            out.append("#" if status != "ok" else (move.lower() if changed else move))
-        return "".join(out)
+        return "".join(r[k].lower() if r[2 + k] else r[k] for r in record)
     return side(0), side(1)
 
 
@@ -426,6 +474,7 @@ class SmokeReport:
     stats: BotStats
     stderr_tail: list = field(default_factory=list)
     crashed: bool = False    # then stderr_tail ends where it first crashed
+    stderr_text: str = ""    # all of it (up to 200 kB), with each crash marked
 
     @property
     def worst(self):
@@ -457,7 +506,17 @@ def smoke_test(cmd, cwd=None, rounds=200):
             err.seek(0)
             text = err.read(end) if end is not None else err.read()
             tail = text.decode("utf-8", "replace").strip().splitlines()[-15:]
-    return SmokeReport(ok, checks, stats, tail, crashed=bool(marks))
+        # Everything it wrote, for the Logs view, with a line where each crash was.
+        err.seek(0)
+        raw, pieces, at = err.read(200_000), [], 0
+        for mark in marks:
+            if mark > len(raw):
+                break
+            pieces += [raw[at:mark].decode("utf-8", "replace").rstrip("\n"), "----- it stopped here; restarted -----"]
+            at = mark
+        pieces.append(raw[at:].decode("utf-8", "replace").rstrip("\n"))
+        full = "\n".join(p for p in pieces if p)
+    return SmokeReport(ok, checks, stats, tail, crashed=bool(marks), stderr_text=full)
 
 
 def _smoke(cmd, cwd, rounds, stderr):
@@ -495,14 +554,13 @@ def _smoke(cmd, cwd, rounds, stderr):
         opp = LocalPlayer(opp_cls.name, opp_cls())
         before = BotStats()
         before.merge(bot.stats)
-        pa, _, n = play_match(bot, opp, match_plan(0, k)[1][:rounds], seed_b=1)
-        problems = [f"{getattr(bot.stats, x) - getattr(before, x)} {x}"
-                    for x in ("timeouts", "crashes", "forfeits")
-                    if getattr(bot.stats, x) - getattr(before, x)]
-        detail = f"{pa / n:.3f} points/round"
-        if problems:
+        pa, _, n, na, _, ended = play_match(bot, opp, match_plan(0, k)[1][:rounds], seed_b=1)
+        detail = f"{pa / na if na else 0.0:.3f} points/round"
+        if "a" in ended:
             ok = False
-            detail += "  ·  " + ", ".join(problems) + (f" ({bot.last_error})" if bot.last_error else "")
+            detail += (f"  ·  {ended['a']} in round {n + 1}; the match ended there"
+                       + (f" ({bot.last_error})" if bot.last_error and bot.last_error != "too slow" else ""))
+        problems = "a" in ended
         checks.append(Check("fail" if problems else "ok", f"Plays {opp_cls.name}", detail))
 
     if bot.stats.junk_lines:
@@ -606,7 +664,7 @@ class TournamentFile:
 
     Reading a .gz file works too (see `load`)."""
 
-    VERSION = 2
+    VERSION = 3   # 3: matches end at a crash, and record each side's rounds
 
     def __init__(self, path, header, resume=False):
         folder = os.path.dirname(os.path.abspath(path))
@@ -688,8 +746,14 @@ class TournamentFile:
             return new
         return None
 
-    def add(self, i, j, rep, pa, pb, n, moves=None):
+    def add(self, i, j, rep, pa, pb, n, moves=None, na=None, nb=None, ended=None):
         rec = {"i": i, "j": j, "r": rep, "n": n, "pa": pa, "pb": pb}
+        if na is not None and na != n:
+            rec["na"] = na
+        if nb is not None and nb != n:
+            rec["nb"] = nb
+        if ended:
+            rec["end"] = ended           # {"a": "crashed"} etc.: the match ended there
         if moves:
             rec["a"], rec["b"] = moves
         self._write(rec)
@@ -755,10 +819,11 @@ class Tournament:
         rounds = [[0] * n for _ in range(n)]
         for m in self.matches:
             i, j = m["i"], m["j"]
+            na, nb = match_rounds(m)
             points[i][j] += m["pa"]
             points[j][i] += m["pb"]
-            rounds[i][j] += m["n"]
-            rounds[j][i] += m["n"]
+            rounds[i][j] += na
+            rounds[j][i] += nb
         return points, rounds
 
     def played(self):
@@ -871,11 +936,11 @@ def _worker(specs, seed, tasks, results, log_dir, worker, stream_moves):
                 _, flips = match_plan(seed, rep)
                 a, b = get(i, 0), get(j, 1 if i == j else 0)
                 record = [] if stream_moves else None
-                pa, pb, n = play_match(a, b, flips,
-                                       bot_seed(seed, rep, specs[i]["name"], 0),
-                                       bot_seed(seed, rep, specs[j]["name"], 1), record)
+                pa, pb, n, na, nb, ended = play_match(a, b, flips,
+                                                      bot_seed(seed, rep, specs[i]["name"], 0),
+                                                      bot_seed(seed, rep, specs[j]["name"], 1), record)
                 moves = encode_record(record) if stream_moves else None
-                results.put(("match", i, j, rep, pa, pb, n, moves))
+                results.put(("match", i, j, rep, pa, pb, n, moves, na, nb, ended))
     finally:
         stats = {}
         for (i, _), p in players.items():
@@ -889,8 +954,9 @@ def run_round_robin(specs, reps, seed=0, workers=1, self_play=False,
     """Play every pairing `reps` times. Returns (points, rounds, stats) where
     points[i][j] / rounds[i][j] is bot i's mean payoff per round against j.
 
-    on_match(i, j, points_i, points_j, rounds, (moves_i, moves_j), rep) is
-    called for every finished match (see encode_record). `stop` is a
+    on_match(i, j, points_i, points_j, rounds, (moves_i, moves_j), rep,
+    rounds_i, rounds_j, ended) is called for every finished match (see
+    play_match and encode_record). `stop` is a
     threading.Event that aborts the run early. `skip` is a set of (i, j, rep)
     already played (resuming from a Checkpoint); those matches are not played
     and are not counted in the returned totals. `priority(i, j, rep)` orders
@@ -939,13 +1005,13 @@ def run_round_robin(specs, reps, seed=0, workers=1, self_play=False,
                                        "see the console for their errors")
                 continue
             if msg[0] == "match":
-                _, i, j, r, pa, pb, k, moves = msg
+                _, i, j, r, pa, pb, k, moves, na, nb, ended = msg
                 if on_match:
-                    on_match(i, j, pa, pb, k, moves, r)
+                    on_match(i, j, pa, pb, k, moves, r, na, nb, ended)
                 points[i][j] += pa
                 points[j][i] += pb
-                rounds[i][j] += k
-                rounds[j][i] += k
+                rounds[i][j] += na
+                rounds[j][i] += nb
                 done += 1
                 if progress:
                     progress(done, total, time.perf_counter() - t0)
