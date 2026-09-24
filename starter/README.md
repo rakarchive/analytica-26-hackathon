@@ -62,7 +62,7 @@ file: it is what you submit. In Java, any extra classes go inside
 
 ## The Arena
 
-Open `Arena.exe`. It has three tabs:
+Open `Arena.exe`. It has two tabs:
 
 **Bots** — click **+ Add bot** and pick your bot's source file (`.py`,
 `.java`, `.c` or `.cpp`); you can select several at once. Then click
@@ -72,17 +72,17 @@ compiles them. Right-click a bot to change its run command.
 
 **Keep this version** freezes your bot as it is now: a copy joins the field as
 a fixed opponent, `my_bot (v1)`, and stays exactly like that while you carry
-on editing. After every run, Results compares your bot with the version you
-kept last, and says whether the change really helped or whether you haven't
-played enough matches to know. Keep a version before each big change. The
-copies are saved in a `versions` folder beside your bot.
+on editing. After every run, the panel beside the board compares your bot
+with the version you kept last, and says whether the change really helped or
+whether you haven't played enough matches to know. Keep a version before each
+big change. The copies are saved in a `versions` folder beside your bot.
 
-**Results** — after a run, every bot's points per round with a confidence
+**After a run**, the board shows every bot's points per round with a confidence
 interval. Click a bot for its record against each opponent. Click two bots to
 compare them properly: same opponents, same noise, and a verdict on whether
 the difference is real or whether you simply haven't played enough matches.
 
-**Matches** — every match played. Click one to watch it round by round, with
+**Matches** — every match played. Click one to see it round by round, with
 the moves noise changed marked. Hover over a round for the details.
 
 **Run tournament** plays everyone against everyone: your bots plus sparring
