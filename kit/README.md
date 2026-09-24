@@ -4,7 +4,14 @@ One folder that gives a Windows machine a working bot setup: the Arena plus
 Python, a JDK, and gcc and g++. Nothing is installed, no admin rights are needed, and
 nothing on the machine is changed.
 
-## Building it
+## Getting it
+
+Every release builds it: the build workflow runs this script on its Windows
+runner and attaches `Arena-Kit.zip` to the release, built on the release's
+branch (the practice kit on `rps`, the event kit on `ipd`). Unzip it onto the
+flash drives.
+
+## Building it by hand
 
 On a Windows machine with internet, once:
 
