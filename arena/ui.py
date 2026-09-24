@@ -623,6 +623,7 @@ class BaseApp:
         self.house_specs = []    # house (reference) bots
         self.check_status = {}   # bot name -> "ok" | "warn" | "fail"
         self.check_reports = {}  # bot name -> its last check: {"report" | "build_error", "code", "at"}
+        self.check_details = False  # check cards show everything, not just the problems
         self.card = None         # report card over the stages (check results)
         self.ui_q = queue.Queue()
         self.engine = None
@@ -1091,18 +1092,26 @@ class BaseApp:
                        {"ok": UP, "warn": WARN, "fail": DOWN}[worst])
 
         rows = []
+        full = self.check_details
+        speed = next((k for k in rep.checks if k.label == "Speed"), None) if rep is not None else None
+        gauge = rep is not None and rep.stats.latencies and (full or (speed and speed.status != "ok"))
         if c.get("build_error") is not None:
             tail = "\n".join(c["build_error"].strip().splitlines()[-10:])
             rows.append(("fail", "Compiles", tail or "the build command failed"))
         elif rep is not None:
-            rows = [(k.status, k.label, k.detail) for k in rep.checks if k.label != "Speed"]
+            # A passing check needs only its name; a problem, its explanation.
+            rows = [(k.status, k.label, k.detail if full or k.status != "ok" else "")
+                    for k in rep.checks if k.label != "Speed"]
+            if speed and not gauge:
+                mean = rep.stats.summary()["mean_ms"] if rep.stats.latencies else 0.0
+                rows.append((speed.status, "Speed", f"{mean:.2f} ms a move on average"))
         elif c["state"] == "running":
             rows = [("wait", "Playing it against the sparring partners…", "")]
 
         cy = y + 104 * s
         r = 13 * s
         text_x = x + pad + 2 * r + 14 * s
-        limit_y = y + h - (150 * s if rep and rep.stats.latencies else 40 * s)
+        limit_y = y + h - (150 * s if gauge else 40 * s)
         for status, label, detail in rows:
             if cy > limit_y:
                 break
@@ -1122,9 +1131,12 @@ class BaseApp:
             cy = cv.bbox(t)[3] + 4 * s
             cv.create_text(text_x, cy, text="\n".join(rep.stderr_tail[-8:]), anchor="nw", fill=DIM,
                            width=w - (text_x - x) - pad, font=self.f_mono, tags=self._card_tag)
-        if rep is not None and rep.stats.latencies:
-            speed = next((k for k in rep.checks if k.label == "Speed"), None)
+        if gauge:
             self._draw_speed_gauge(x + pad, y + h - 128 * s, w - 2 * pad, rep.stats.summary(), speed)
+        if rep is not None and c["state"] == "done":
+            t = cv.create_text(x + w - 18 * s, y + h - 12 * s, anchor="se", fill=ACCENT, font=self.f_card_detail,
+                               text="Details ▾" if full else "Details ▸", tags=(self._card_tag, "details_link"))
+            cv.tag_bind("details_link", "<Button-1>", lambda e: self._toggle_check_details())
 
     def _draw_speed_gauge(self, x, y, w, st, speed):
         """Time per move on a log scale from 0.01 ms to 100 ms."""
@@ -1186,14 +1198,9 @@ class BaseApp:
             cv.create_oval(x + pad, ry - d, x + pad + 2 * d, ry + d, fill=color, width=0, tags=self._card_tag)
             cv.create_text(x + pad + 2 * d + 12 * s, ry, text=r["name"], anchor="w", fill=FG,
                            font=f_name, tags=self._card_tag)
-            cv.create_text(x + w * 0.42, ry, text=r["reason"], anchor="w", fill=color if r["status"] != "ok"
-                           else DIM, font=f_det, tags=self._card_tag, width=w * 0.42)
-            if r.get("mean_ms") is not None:
-                cv.create_text(x + w - pad, ry, text=f"{r['mean_ms']:.2f} ms", anchor="e", fill=DIM,
-                               font=f_det, tags=self._card_tag)
-        if c.get("projection"):
-            cv.create_text(x + pad, y + h - 40 * s, text=c["projection"], anchor="w", fill=FG,
-                           font=self.f_card_detail, tags=self._card_tag)
+            if r["status"] != "ok":
+                cv.create_text(x + w * 0.42, ry, text=r["reason"], anchor="w", fill=color, font=f_det,
+                               tags=self._card_tag, width=w * 0.55)
 
     def log(self, text, color=FG):
         """Thread-safe."""
@@ -1227,10 +1234,8 @@ class BaseApp:
             spec = user_bot_spec(path, name)
             spec["added"] = True
             self.team_specs.append(spec)
-            self.log(f"Added {name} ({os.path.basename(path)})"
-                     + ("  ·  compiled first" if spec["build"] else ""), DIM)
+            self.log(f"Added {name}.", DIM)
         self._field_changed()
-        self.log("Right-click a bot on the board to change its command. Next: Check.", DIM)
 
     def can_keep(self, i):
         spec = self.specs[i]
@@ -1272,8 +1277,7 @@ class BaseApp:
         at = self.team_specs.index(spec) + 1 if spec in self.team_specs else len(self.team_specs)
         self.team_specs.insert(at, kept)
         self._field_changed()
-        self.log(f"Kept {spec['name']} as it is now: {kept['name']} will stay exactly like this. "
-                 f"Keep editing {os.path.basename(src)}; after each run, the two are compared beside the board.", UP)
+        self.log(f"Kept {spec['name']} as {kept['name']}.", UP)
 
     def remove_bot(self, i):
         spec = self.specs[i]
@@ -1375,8 +1379,8 @@ class BaseApp:
             card(state="done", report=rep)
             self._report(spec, report=rep)
             self.ui_q.put(("status", (name, rep.worst)))
-            self.log(f"{name}: " + {"ok": "PASS. Now run a tournament.", "warn": "passed with warnings",
-                                    "fail": "FAIL; see the report card"}[rep.worst],
+            self.log(f"{name}: " + {"ok": "check passed", "warn": "check passed, with warnings",
+                                    "fail": "check failed"}[rep.worst],
                      {"ok": UP, "warn": WARN, "fail": DOWN}[rep.worst])
         self._work(work)
 
@@ -1385,6 +1389,17 @@ class BaseApp:
         of the code it was run on, so it can be shown when the bot is picked."""
         self.ui_q.put(("report", (spec["name"], dict(result, code=harness.code_hash(spec),
                                                      at=time.strftime("%H:%M")))))
+
+    def _toggle_check_details(self):
+        """Details ▸ on a check card: every check's detail and the timing gauge."""
+        self.check_details = not self.check_details
+        if self.card:
+            self._draw_card()
+        else:
+            self._redraw_panel()
+
+    def _redraw_panel(self):
+        self.layout()
 
     def _report_updated(self, name):
         pass  # the Arena shows the report beside the board
@@ -1489,11 +1504,9 @@ class BaseApp:
         self.working = True
         self.layout()
         if records:
-            self._append_log(f"Resumed: {len(records):,} of {self.total:,} matches restored "
-                             f"(seed {seed}).", UP)
+            self._append_log(f"Carrying on: {len(records):,} of {self.total:,} matches already played.", UP)
         else:
-            self._append_log(f"The tournament begins: {n} players, {self.total:,} matches, seed {seed}."
-                             + ("  Saving as it goes." if out else ""), FG)
+            self._append_log(f"Running {self.total:,} matches.", FG)
         self._refresh_buttons()
 
     def _restore(self, records):

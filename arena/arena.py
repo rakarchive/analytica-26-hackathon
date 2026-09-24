@@ -58,6 +58,7 @@ class Arena(BaseApp):
         self.explorer_top = 0        # first row shown in the match list
         self.explorer_rows = []      # the matches currently listed
         self.explorer_note = ""
+        self.compare_details = False  # Compare shows the verdict; Details ▸ shows the numbers behind it
         self.viewing = None          # the match open in the Matches tab
         self.last_summary = None     # the last Check all's results
         super().__init__(root)
@@ -86,8 +87,7 @@ class Arena(BaseApp):
         root.bind("<Button-4>", lambda e: self._wheel(e, 1))
         root.bind("<Button-5>", lambda e: self._wheel(e, -1))
         self.layout()
-        self.log("Add your bots, check them, then run a tournament. The results appear beside "
-                 "the board; Matches holds every match played.", FG)
+        self.log("Add your bot, check it, then run a tournament.", FG)
 
     # ---------------- settings ----------------
 
@@ -101,7 +101,6 @@ class Arena(BaseApp):
         self.file_var = tk.StringVar(value="")
         self.resume = False      # carry on with the tournament in the file (see run_or_stop)
         self.delta_var = tk.StringVar(value="0.05")
-        self.details_var = tk.BooleanVar(value=False)
         self.baselines_var.trace_add("write", lambda *a: self._field_changed())
 
     def _compose_field(self):
@@ -171,7 +170,6 @@ class Arena(BaseApp):
         self._label(f, "Difference worth detecting").pack(side="left")
         self._entry(f, self.delta_var, 6).pack(side="left", padx=(6, 6))
         self._label(f, "points per round", FAINT).pack(side="left", padx=(0, 14))
-        self._checkbox(f, "Show the test's workings", self.details_var).pack(side="left")
 
     def toggle_options(self):
         self.options_open = not self.options_open
@@ -238,10 +236,8 @@ class Arena(BaseApp):
         self.run_info = {"reps": tour.reps, "seed": tour.seed, "out": path,
                          "ref_weight": self.num(self.weight_var, float, 1.0)}
         self.side_tab, self.viewing = "results", None   # an opened tournament shows its results
-        self.log(f"Opened {len(tour):,} matches from {os.path.basename(path)} "
-                 f"({tour.n} bots, {tour.reps} per pairing, seed {tour.seed}).", UP)
-        if not tour.complete():
-            self.log("It is unfinished: Run tournament carries on with it.", DIM)
+        self.log(f"Opened {os.path.basename(path)}: {len(tour):,} matches"
+                 + ("; Run tournament finishes it." if not tour.complete() else "."), UP)
         self.layout()
         return True
 
@@ -497,7 +493,11 @@ class Arena(BaseApp):
                 trouble = self._tournament_trouble(self.selected[0])
                 if trouble:
                     cv.create_text(x + w - 24 * s, by + 18 * s, anchor="ne", fill=DOWN,
-                                   font=self.f_card_detail, text=trouble, tags="panel")
+                                   font=self.f_card_detail, text="in the tournament: " + trouble,
+                                   tags=("panel", "trouble"))
+                    folder = self.run_info.get("log_dir")
+                    self._tag_tip("trouble", "What it printed to stderr in the tournament is in "
+                                             f"{folder}." if folder else "")
             else:
                 self._draw_stats(x, by, w, bh)
         elif self.side_tab == "check":
@@ -589,16 +589,19 @@ class Arena(BaseApp):
             self.viewing = None
         self._refresh_side()
 
-    def _tournament_trouble(self, i):
+    def _tournament_trouble(self, i, stats=None):
         """One line on what went wrong for the bot in the tournament, if anything."""
-        got = self.tour.stats_objects() if self.tour else {}
-        st = got[i].summary() if i in got and got[i].loaded else None
+        if stats is not None:                   # straight from a run that just ended
+            st = stats[i].summary() if i in stats else None
+        else:                                   # from the tournament file, where it was saved
+            got = self.tour.stats_objects() if self.tour else {}
+            st = got[i].summary() if i in got and got[i].loaded else None
         if not st:
             return ""
-        bits = [f"{st[k]} {label}" for k, label in (("timeouts", "timeouts"), ("crashes", "crashes"),
-                                                    ("forfeits", "forfeited rounds"),
-                                                    ("junk_lines", "stray stdout lines")) if st.get(k)]
-        return "in the tournament: " + ", ".join(bits) if bits else ""
+        bits = [f"{st[k]:,} {label}" for k, label in (("timeouts", "timeouts"), ("crashes", "crashes"),
+                                                      ("forfeits", "forfeited rounds"),
+                                                      ("junk_lines", "stray stdout lines")) if st.get(k)]
+        return ", ".join(bits)
 
     def _layout_board(self):
         if self.board is None:
@@ -632,36 +635,21 @@ class Arena(BaseApp):
 
     def _draw_run_panel(self, x, y, w, h):
         cv, s = self.cv, self.scale
-        tx, ty = self._panel(x, y, w, h, "RUN")
+        tx, ty = self._panel(x, y, w, h, "TOURNAMENT")
         if self.state == "running":
             rate = self.applied / max(0.001, time.perf_counter() - self.run_started)
             left = (self.total - self.applied) / max(0.5, rate)
-            head = (f"{self.applied:,} / {self.total:,} matches   ·   {rate:,.0f} a second"
-                    f"   ·   ~{int(left // 60)}:{int(left % 60):02d} left")
+            head = (f"{self.applied:,} of {self.total:,} matches   ·   "
+                    f"about {int(left // 60)}:{int(left % 60):02d} left")
         elif self.tour:
-            head = (f"{len(self.tour):,} matches · {self.tour.reps} per pairing · seed "
-                    f"{self.tour.seed}")
+            head = f"{len(self.tour):,} matches played"
         else:
-            head = "Press Run tournament. Every match is saved to the tournament file."
+            head = "Press Run tournament."
         cv.create_text(tx, ty, text=head, anchor="nw", fill=FG, font=self.f_stage_name, tags="panel")
-        if self.tour and self.tour.path:
-            cv.create_text(tx, ty + 44 * s, text=self.tour.path, anchor="nw", fill=DIM,
-                           font=self.f_card_detail, tags="panel", width=w - 48 * s)
-        trouble = []
-        got = self.tour.stats_objects() if self.tour else {}
-        for i, sp in enumerate(self.specs):
-            st = got[i].summary() if i in got and got[i].loaded else None
-            if not st:
-                continue
-            bits = [f"{st[k]} {label}" for k, label in (("timeouts", "timeouts"),
-                                                        ("crashes", "crashes"),
-                                                        ("forfeits", "forfeited rounds"),
-                                                        ("junk_lines", "stray stdout lines"))
-                    if st.get(k)]
-            if bits:
-                trouble.append(f"{sp['name']}: " + ", ".join(bits))
+        trouble = [f"{sp['name']}: {t}" for i, sp in enumerate(self.specs)
+                   for t in [self._tournament_trouble(i)] if t]
         if trouble:
-            cv.create_text(tx, ty + 84 * s, text="\n".join(trouble[:6]), anchor="nw", fill=DOWN,
+            cv.create_text(tx, ty + 56 * s, text="\n".join(trouble[:6]), anchor="nw", fill=DOWN,
                            font=self.f_card_detail, tags="panel")
 
     def _draw_details(self, x, y, w, h):
@@ -695,7 +683,10 @@ class Arena(BaseApp):
             cv.create_text(tx + 8 * s, yy + rh / 2 - 2 * s, text=self.display_name(j), anchor="w",
                            fill=FG, font=f, tags="panel")
             cv.create_text(x + w - 24 * s, yy + rh / 2 - 2 * s, anchor="e", fill=DIM, font=f,
-                           text=f"{mine:.3f}   (they got {theirs:.3f})", tags="panel")
+                           text=f"{mine:.3f}", tags=("panel", f"opp{j}"))
+            cv.addtag_overlapping(f"opp{j}", tx, yy, x + w - 24 * s, yy + rh - 4 * s)
+            self._tag_tip(f"opp{j}", f"Against {self.display_name(j)}: it got {mine:.3f} a round, "
+                                     f"{self.display_name(j)} got {theirs:.3f}.")
             yy += rh
 
     def _draw_stats(self, x, y, w, h):
@@ -723,20 +714,26 @@ class Arena(BaseApp):
             verdict, colour = f"{nb} really does score more", DOWN
         lines = [
             (f"{na}   vs   {nb}", FG, self.f_stage_name),
-            (f"{c['diff']:+.4f} ± {c['ci']:.4f} points per round", FG, self.f_stage_score),
-            (f"over {c['pairs']:,} matches against the same opponents, with the same noise",
-             DIM, self.f_card_detail),
-            ("", FG, self.f_card_detail),
             (verdict, colour, self.f_stage_name),
-            (f"resolving {delta:g} a round would take about {c['needed']:,} matches each"
-             if c["needed"] else "", DIM, self.f_card_detail),
-            (f"SPRT  llr {c['sprt']['llr']:+.2f}   bounds [{c['sprt']['lower']:.2f}, "
-             f"{c['sprt']['upper']:.2f}]   δ = {delta:g}   ({c['sprt']['n']:,} paired matches)"
-             if self.details_var.get() else "", FAINT, self.f_card_detail),
-            ("", FG, self.f_card_detail),
-            (f"head to head:  {c['h2h'][0]:.3f}  vs  {c['h2h'][1]:.3f}   over {c['h2h'][2]} matches",
-             FG, self.f_card_label),
+            (f"{c['diff']:+.3f} points per round", FG, self.f_card_label),
         ]
+        if self.compare_details:
+            lines += [
+                ("", FG, self.f_card_detail),
+                (f"{c['diff']:+.4f} ± {c['ci']:.4f}, over {c['pairs']:,} matches against the same "
+                 "opponents, with the same noise", DIM, self.f_card_detail),
+                (f"telling apart {delta:g} a round would take about {c['needed']:,} matches each"
+                 if c["needed"] else "", DIM, self.f_card_detail),
+                (f"head to head: {c['h2h'][0]:.3f} vs {c['h2h'][1]:.3f} over {c['h2h'][2]} matches",
+                 DIM, self.f_card_detail),
+                (f"SPRT  llr {c['sprt']['llr']:+.2f}   bounds [{c['sprt']['lower']:.2f}, "
+                 f"{c['sprt']['upper']:.2f}]   δ = {delta:g}   ({c['sprt']['n']:,} paired matches)",
+                 FAINT, self.f_card_detail),
+            ]
+        link = cv.create_text(x + w - 24 * s, y + 18 * s, anchor="ne", fill=ACCENT, font=self.f_card_detail,
+                              text="Details ▾" if self.compare_details else "Details ▸",
+                              tags=("panel", "compare_link"))
+        cv.tag_bind("compare_link", "<Button-1>", lambda e: self._toggle_compare_details())
         yy = ty
         for text, col, font in lines:
             if not text:
@@ -745,6 +742,13 @@ class Arena(BaseApp):
             item = cv.create_text(tx, yy, text=text, anchor="nw", fill=col, font=font,
                                   width=w - 48 * s, tags="panel")
             yy = cv.bbox(item)[3] + 8 * s
+
+    def _toggle_compare_details(self):
+        self.compare_details = not self.compare_details
+        self._refresh_side()
+
+    def _redraw_panel(self):
+        self._refresh_side()
 
     def _draw_match_list(self, x, y, w, h):
         """The list of matches, drawn under the "mlist" tag so that scrolling
@@ -865,12 +869,22 @@ class Arena(BaseApp):
             self.selected = [by_name[self.specs[k]["kept_from"]], k]
 
     def _finished(self, ranks, stats):
-        super()._finished(ranks, stats)
+        """One line for the run, and one for each of your bots that had
+        trouble in it; the rest is in the Results tab."""
+        self._append_log(f"Finished: {self.total:,} matches.", UP)
+        for i, sp in enumerate(self.specs):
+            trouble = self._tournament_trouble(i, stats) if sp.get("added") else ""
+            if trouble:
+                self._append_log(f"{sp['name']}: {trouble}", DOWN)
         self._compare_with_kept()
         self.side_tab, self.viewing = "results", None   # a finished run opens on its results
-        if self.run_info.get("out"):
-            self._append_log(f"Saved to {self.run_info['out']}", UP)
         self.layout()
+
+    def note(self, text, color, toast=False):
+        """The running commentary is the show's; the Arena's log keeps only
+        what went wrong."""
+        if color == DOWN:
+            self._append_log(text, color)
 
     def _advance(self, dt):
         """No live replays while running: results just go onto the standings."""
@@ -904,7 +918,6 @@ class Arena(BaseApp):
                 base = path or os.path.join(TOURNAMENT_DIR, "tournament-1.jsonl")
                 os.makedirs(os.path.dirname(os.path.abspath(base)), exist_ok=True)
                 self.file_var.set(harness.TournamentFile.next_free(base))
-                self.log(f"Saving to {self.file_var.get()}", DIM)
             self.run_started = time.perf_counter()
             self.layout()
         super().run_or_stop()
