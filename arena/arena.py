@@ -30,7 +30,7 @@ import harness  # noqa: E402
 import stats as stat  # noqa: E402
 from ui import *  # noqa: E402,F401,F403
 from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,  # noqa: E402
-                BaseApp, FlatButton, adopt_portable_tools, baseline_specs, default_workers,
+                BaseApp, FlatButton, ThinScrollbar, Tooltip, adopt_portable_tools, baseline_specs, default_workers,
                 user_bot_spec)
 
 # Where tournaments are saved unless Advanced says otherwise: one numbered file
@@ -61,6 +61,26 @@ class Arena(BaseApp):
         self.viewing = None          # the match open in the Matches tab
         self.last_summary = None     # the last Check all's results
         super().__init__(root)
+        tips = {self.buttons["add"]: "Add your bot's source file (.py, .java, .c or .cpp). "
+                                     "You can pick several at once.",
+                self.buttons["keep"]: "Freeze the picked bot as it is now. The copy joins the field as a "
+                                      "fixed opponent, and after every run your bot is compared with it.",
+                self.buttons["run"]: lambda: ("Stop the tournament. Run again, with nothing changed, "
+                                              "carries on where it stopped."
+                                              if self.state in ("running", "paused") else
+                                              "Play every bot against every other, as many times as "
+                                              "Advanced says. Every match is saved."),
+                self.opt_button: "Matches per pairing, the seed, workers, house bots, the tournament "
+                                 "file, and exporting the results.",
+                self.panel_buttons["check"]: "Play the picked bot against the sparring partners and "
+                                             "report anything wrong with it.",
+                self.panel_buttons["checkall"]: "Check every bot you added.",
+                self.panel_buttons["back"]: "Back to the list of matches."}
+        for widget, text in tips.items():
+            self.tip.attach(widget, text)
+        self.log_sb = ThinScrollbar(self.cv, lambda f: self.logbox.yview_moveto(f))
+        self.logbox.config(yscrollcommand=self.log_sb.set)
+        self.list_sb = ThinScrollbar(self.cv, self._scroll_matches)
         self.side_tab = "check"    # which tab the panel beside the board is on
         root.bind("<MouseWheel>", self._wheel)
         root.bind("<Button-4>", lambda e: self._wheel(e, 1))
@@ -100,8 +120,7 @@ class Arena(BaseApp):
     # ---------------- toolbar ----------------
 
     def _build_toolbar(self, tb):
-        bar = tk.Frame(tb, bg=BG)
-        bar.pack(fill="x")
+        self.tip = Tooltip(self.root)   # made here: the first layout comes before __init__ ends
         # The bot buttons sit under the board, placed there at each layout.
         for key, text, cmd in (("add", "+ Add bot", self.add_bot),
                                ("keep", "Keep this version", self.keep_selected)):
@@ -111,13 +130,10 @@ class Arena(BaseApp):
                               "checkall": FlatButton(self.cv, "Check all", self.check_all),
                               "back": FlatButton(self.cv, "‹ All matches", self.close_match)}
 
-        # Run and Advanced on the right; the help line centred over the board
-        # (placed at each layout, since the board's width follows the window's).
-        self.opt_button = FlatButton(bar, "Advanced ▸", self.toggle_options)
-        self.opt_button.pack(side="right")
-        self.buttons["run"] = FlatButton(bar, "Run tournament", self.run_or_stop, primary=True)
-        self.buttons["run"].pack(side="right", padx=(0, 8))
-        self.hint = self._label(bar, "", FAINT)
+        # Run and Advanced sit in the header, beside the match and bot counts
+        # (see _header_right); Advanced's settings open under the header.
+        self.opt_button = FlatButton(self.cv, "Advanced ▸", self.toggle_options)
+        self.buttons["run"] = FlatButton(self.cv, "Run tournament", self.run_or_stop, primary=True)
 
         # Everything you rarely touch, in one place.
         opt = self.options = tk.Frame(tb, bg=PANEL, padx=14, pady=10, highlightthickness=1,
@@ -164,7 +180,7 @@ class Arena(BaseApp):
         self.layout()
 
     def _refresh_buttons(self):
-        if not self.buttons or not hasattr(self, "hint"):
+        if not self.buttons or not hasattr(self, "panel_buttons"):
             return
         idle = not self.working and self.state in ("ready", "final")
         has_team = any(s["kind"] == "team" for s in self.specs)
@@ -175,21 +191,6 @@ class Arena(BaseApp):
         self.buttons["run"].set_enabled(not self.working or self.state in ("running", "paused"))
         self.buttons["run"].config(text="Stop" if self.state in ("running", "paused")
                                    else "Run tournament")
-        self.hint.config(text=self._tab_hint())
-
-    def _tab_hint(self):
-        """One line saying what to do here."""
-        if self.state == "running":
-            return "playing…"
-        if not any(s.get("added") for s in self.specs) and not self.tour:
-            return "add your bot, then Check it"
-        if len(self.selected) >= 2:
-            return "comparing the two picked bots · click one again to drop it"
-        if self.selected:
-            return "click another bot to compare the two · click this one again to let go"
-        if not self.tour:
-            return "Check your bots, then Run tournament. Keep this version before a big change"
-        return "click a bot for its results and check, two to compare them"
 
     # ---------------- tournament files ----------------
 
@@ -296,13 +297,21 @@ class Arena(BaseApp):
 
     # ---------------- layout ----------------
 
+    def _header_right(self, W, m, s):
+        run, adv = self.buttons["run"], self.opt_button
+        self.cv.create_window(W - m, 46 * s, window=adv, anchor="e")
+        x = W - m - adv.winfo_reqwidth() - 8 * s
+        self.cv.create_window(x, 46 * s, window=run, anchor="e")
+        return x - run.winfo_reqwidth() - 20 * s
+
     def _layout_content(self, W, H, top, m):
         """Always the same shape: the board on the left; on the right the
         panel, with tabs that follow what is picked, above the log."""
         avail = H - top - m
         bw = W * 0.5
-        # Under the board: its buttons, centred. Over it: the help line.
+        # Under the board: its buttons, centred.
         s = self.scale
+        self.tip.hide()             # whatever it was about is being redrawn
         add, keep = self.buttons["add"], self.buttons["keep"]
         row_h = max(add.winfo_reqheight(), keep.winfo_reqheight())
         bottom = H - m - row_h - 12 * s
@@ -312,7 +321,6 @@ class Arena(BaseApp):
         left = cx - (add.winfo_reqwidth() + gap + keep.winfo_reqwidth()) / 2
         self.cv.create_window(left, H - m, window=add, anchor="sw")
         self.cv.create_window(left + add.winfo_reqwidth() + gap, H - m, window=keep, anchor="sw")
-        self.hint.place(x=cx - m, rely=0.5, anchor="center")
         self._refresh_buttons()     # the help line and what can be pressed follow the layout
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
         panel_h = avail * 0.64
@@ -329,9 +337,13 @@ class Arena(BaseApp):
 
     def _place_log(self, visible):
         x, y, w, h = self.log_box
+        sw = 10 * self.scale
         self.log_win = self.cv.create_window(x, y, window=self.logbox, anchor="nw",
-                                             width=max(1, w), height=max(1, h),
+                                             width=max(1, w - sw), height=max(1, h),
                                              state="normal" if visible else "hidden")
+        if hasattr(self, "log_sb"):
+            self.cv.create_window(x + w, y, window=self.log_sb, anchor="ne", width=sw, height=max(1, h),
+                                  state="normal" if visible else "hidden")
 
     # ---------------- one picked bot: its results and its check ----------------
 
@@ -415,6 +427,7 @@ class Arena(BaseApp):
             cv.tag_raise(t, r)
             if usable and not active:
                 cv.tag_bind(f"tab_{key}", "<Button-1>", lambda e, k=key: self._pick_tab(k))
+            self._tag_tip(f"tab_{key}", self._tab_tip(key, usable))
             tx = x1 + 6 * s
         by, bh = y + tab_h, h - tab_h
         right = x + w                     # the tab strip's right end, for its button and notes
@@ -492,6 +505,28 @@ class Arena(BaseApp):
         finally:
             self._card_tag = "card"
 
+    def _tab_tip(self, key, usable):
+        picked = [self.display_name(k) for k in self.selected]
+        if not usable:
+            return "Run or open a tournament first."
+        if key == "results":
+            return {0: "How the tournament went, and any bot that had trouble in it.",
+                    1: f"{picked[0] if picked else ''}'s record against each opponent.",
+                    2: "Whether one of the two really scores more, judged on the same opponents "
+                       "with the same noise."}[min(2, len(picked))]
+        if key == "check":
+            return (f"{picked[0]}'s last protocol check, and a button to check it again." if picked
+                    else "Check every bot you added, and see how they all did.")
+        return ("Every match played." if not picked else
+                f"{picked[0]}'s matches." if len(picked) == 1 else
+                f"The matches between {picked[0]} and {picked[1]}.") + " Click one to see it round by round."
+
+    def _tag_tip(self, tag, text):
+        """A tooltip on a canvas tag, replacing any it had (tags outlive layouts)."""
+        cv = self.cv
+        cv.tag_bind(tag, "<Enter>", lambda e: self.tip._later(e, text))
+        cv.tag_bind(tag, "<Leave>", lambda e: self.tip.hide())
+
     def _pick_tab(self, key):
         self.side_tab = key
         if key != "matches":
@@ -514,6 +549,21 @@ class Arena(BaseApp):
             self.rows = {}
             return
         super()._layout_board()
+        # The board rebinds a row's <Enter> and <Leave> at every layout, so adding
+        # to those two here keeps exactly one tooltip per row.
+        for i in self.rows:
+            tag = f"row{i}"
+            self.cv.tag_bind(tag, "<Enter>", lambda e, i=i: self.tip._later(e, lambda: self._row_tip(i)), add="+")
+            self.cv.tag_bind(tag, "<Leave>", lambda e: self.tip.hide(), add="+")
+
+    def _row_tip(self, i):
+        name = self.display_name(i)
+        if i in self.selected:
+            return f"Click to let {name} go."
+        more = " Right-click for more." if self.specs[i]["kind"] == "team" else ""
+        if len(self.selected) == 1:
+            return f"Click to compare {name} with {self.display_name(self.selected[0])}.{more}"
+        return f"Click to pick {name}: its results, its check and its matches.{more}"
 
     # ---------------- panels ----------------
 
@@ -661,19 +711,31 @@ class Arena(BaseApp):
             kind = game.verdict(a, b)[0][0]
             yy = ty + k * rh
             tag = f"match{idx}"
-            cv.create_rectangle(x + 12 * s, yy, x + w - 12 * s, yy + rh - 3 * s,
+            cv.create_rectangle(x + 12 * s, yy, x + w - 20 * s, yy + rh - 3 * s,
                                 fill=PANEL2 if k % 2 else PANEL, width=0, tags=("panel", tag))
             cv.create_text(tx, yy + rh / 2, anchor="w", fill=FG, font=f, tags=("panel", tag),
                            text=f"{self.display_name(mt['i'])} v {self.display_name(mt['j'])}")
-            cv.create_text(x + w - 24 * s, yy + rh / 2, anchor="e", font=f, tags=("panel", tag),
+            cv.create_text(x + w - 30 * s, yy + rh / 2, anchor="e", font=f, tags=("panel", tag),
                            fill={"up": UP, "down": DOWN, "warn": WARN}.get(
                                harness.GAME.kind_colour.get(kind, "dim"), DIM),
                            text=f"{a:.2f} – {b:.2f}   {kind}")
             cv.tag_bind(tag, "<Button-1>", lambda e, mm=mt: self.open_match(mm))
+            self._tag_tip(tag, f"Repetition {mt['r'] + 1}: click to see it round by round.")
         shown = min(len(self.explorer_rows), self.explorer_top + fit)
         cv.create_text(x + w / 2, y + h - 18 * s, anchor="s", fill=FAINT, font=self.f_card_detail,
                        tags="panel", text=f"{self.explorer_top + 1}–{shown} of "
-                                          f"{len(self.explorer_rows):,}   ·   scroll to move")
+                                          f"{len(self.explorer_rows):,}")
+        total = len(self.explorer_rows)
+        self.list_fit = fit
+        if total > fit:
+            sw = 10 * s
+            cv.create_window(x + w - 4 * s, ty, window=self.list_sb, anchor="ne", width=sw,
+                             height=fit * rh, tags="panel")
+            self.list_sb.set(self.explorer_top / total, (self.explorer_top + fit) / total)
+
+    def _scroll_matches(self, first):
+        self.explorer_top = int(round(first * len(self.explorer_rows)))
+        self.layout()
 
     # ---------------- hooks ----------------
 
