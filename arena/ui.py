@@ -270,7 +270,11 @@ class Stage:
         self.cv.delete(self.tag)
         self.cv.create_rectangle(x, y, x + w, y + h, fill=PANEL, outline=LINE, tags=self.tag)
         s = self.app.scale
-        self.head_h = (116 if self.labels else 96) * s
+        # Tall enough for the names, labels and the big scores under them, as
+        # the score font actually measures, so the grid never runs into them.
+        score_bottom = ((72 if self._labelled() else 50) * s
+                        + self.app.f_stage_score.metrics("linespace") + 10 * s)
+        self.head_h = max((116 if self._labelled() else 96) * s, score_bottom)
         grid_h = h - self.head_h - 14 * s
         # Pick how many rounds go on a row so the squares come out as large as
         # the stage allows (a tall single viewer fits fewer, bigger squares).
@@ -317,7 +321,10 @@ class Stage:
         self.flips = 0
         self.glows = []
         self.hold = 0.0
-        self._draw_static()
+        if hasattr(self, "w"):
+            self.layout(self.x, self.y, self.w, self.h)   # its labels change the header's height
+        else:
+            self._draw_static()
 
     def _draw_waiting(self):
         self.cv.delete(self.tag + "dyn")
@@ -341,12 +348,12 @@ class Stage:
                             width=0, tags=t)
         cv.create_text(x + w - pad - 16 * s, y + 16 * s, text=app.display_name(j), anchor="ne",
                        fill=FG, font=app.f_stage_name, tags=t)
-        if self.labels:
+        if self._labelled():
             cv.create_text(x + pad + 16 * s, y + 52 * s, text=self.labels[0] or "", anchor="nw",
                            fill=DIM, font=app.f_card_detail, width=w * 0.3, tags=t)
             cv.create_text(x + w - pad - 16 * s, y + 52 * s, text=self.labels[1] or "", anchor="ne",
                            fill=DIM, font=app.f_card_detail, width=w * 0.3, tags=t)
-        sy = y + (72 if self.labels else 50) * s
+        sy = y + (72 if self._labelled() else 50) * s
         self.score_a = cv.create_text(x + pad + 16 * s, sy, text="0.00", anchor="nw",
                                       fill=DIM, font=app.f_stage_score, tags=t)
         self.score_b = cv.create_text(x + w - pad - 16 * s, sy, text="0.00", anchor="ne",
@@ -392,6 +399,9 @@ class Stage:
         cv.itemconfig(self.round_txt, text=(f"{self.title}  ·  " if self.title else "")
                       + f"round {self.drawn} / {n}")
         cv.itemconfig(self.flip_txt, text=f"⚡ {self.flips} flipped by noise" if self.flips else "")
+
+    def _labelled(self):
+        return bool(self.labels) and any(self.labels)
 
     def reveal(self):
         """Show the whole match at once instead of replaying it."""
