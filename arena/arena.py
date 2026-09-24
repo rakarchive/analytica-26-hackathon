@@ -12,6 +12,7 @@ Right-click a bot on the board to edit its run command or remove it.
 """
 
 import argparse
+import glob
 import multiprocessing
 import os
 import runpy
@@ -58,6 +59,12 @@ class Arena(BaseApp):
         self.explorer_filter = None  # a bot index, or None for all
         self.explorer_note = ""
         super().__init__(root)
+        # Under the panel: the log, or the picked bot's check report instead.
+        self.botbox = tk.Text(self.cv, bg=PANEL, fg=FG, relief="flat", wrap="word",
+                              highlightthickness=1, highlightbackground=LINE, padx=14, pady=10,
+                              insertbackground=FG, cursor="arrow")
+        self.botbox.bind("<Key>", lambda e: "break" if e.keysym not in ("c", "C") else None)
+        self._botbox_key = None
         root.bind("<MouseWheel>", self._wheel)
         root.bind("<Button-4>", lambda e: self._wheel(e, 1))
         root.bind("<Button-5>", lambda e: self._wheel(e, -1))
@@ -343,7 +350,9 @@ class Arena(BaseApp):
         panel_h = avail * 0.64
         self.card_box = (rx, top, rw, panel_h)
         self.log_box = (rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2)
-        self._place_log(True)
+        picked = self._report_bot()
+        self._place_log(picked is None)
+        self._place_botbox(picked)
         self._layout_board()
         if self.card:
             return                  # a check's result: drawn over this spot (_draw_overlays)
@@ -359,6 +368,112 @@ class Arena(BaseApp):
         self.log_win = self.cv.create_window(x, y, window=self.logbox, anchor="nw",
                                              width=max(1, w), height=max(1, h),
                                              state="normal" if visible else "hidden")
+
+    # ---------------- the picked bot's check report ----------------
+
+    def _report_bot(self):
+        """The team bot whose check report replaces the log, if one is picked."""
+        if self.view == "bots" and len(self.selected) == 1:
+            i = self.selected[0]
+            if i < self.n and self.specs[i]["kind"] == "team":
+                return i
+        return None
+
+    def _place_botbox(self, i):
+        if not hasattr(self, "botbox"):
+            return
+        x, y, w, h = self.log_box
+        self.cv.create_window(x, y, window=self.botbox, anchor="nw", width=max(1, w),
+                              height=max(1, h), state="hidden" if i is None else "normal")
+        if i is None:
+            self._botbox_key = None
+            return
+        self.botbox.config(font=self.logbox.cget("font"), tabs=self.logbox.cget("tabs"))
+        for color in (FG, DIM, FAINT, DOWN, UP, WARN):
+            self.botbox.tag_configure(color, foreground=color)
+        lines = self._report_lines(i)
+        key = (self.specs[i]["name"], tuple(lines))
+        if key != self._botbox_key:          # rewrite only on change, so scrolling sticks
+            self._botbox_key = key
+            self.botbox.delete("1.0", "end")
+            for text, color in lines:
+                self.botbox.insert("end", text + "\n", color)
+
+    def _report_updated(self, name):
+        i = self._report_bot()
+        if i is not None and self.specs[i]["name"] == name:
+            self.layout()
+
+    def _report_lines(self, i):
+        """The bot's last protocol check, in full where it failed or warned,
+        with the end of its stderr; and any trouble it had in the tournament,
+        with the end of its tournament log."""
+        spec = self.specs[i]
+        name, out = spec["name"], []
+        got = self.check_reports.get(name)
+        colour = {"ok": UP, "warn": WARN, "fail": DOWN}
+        if not got:
+            out.append((f"{name} hasn't been checked yet. Click Check to try it against the "
+                        "sparring partners.", DIM))
+        else:
+            stale = got.get("code") and got["code"] != harness.code_hash(spec)
+            if got.get("build_error") is not None:
+                out.append((f"{name}: build failed  ·  checked at {got['at']}", DOWN))
+                out += [(line, FG) for line in got["build_error"].strip().splitlines()[-40:]]
+            else:
+                rep = got["report"]
+                verdict = {"ok": "PASS", "warn": "passed with warnings", "fail": "FAIL"}[rep.worst]
+                out.append((f"{name}: protocol check {verdict}  ·  checked at {got['at']}",
+                            colour[rep.worst]))
+                mark = {"ok": "✓", "warn": "!", "fail": "✗"}
+                for c in rep.checks:
+                    first, *rest = c.detail.split("\n") if c.detail else [""]
+                    out.append((f"{mark[c.status]}  {c.label}" + (f": {first}" if first else ""),
+                                colour[c.status] if c.status != "ok" else FG))
+                    if c.status != "ok":
+                        out += [("      " + r, DIM) for r in rest]
+                if rep.worst != "ok" and rep.stderr_tail:
+                    out.append(("", FG))
+                    out.append(("Last lines of its stderr before it first crashed:" if rep.crashed
+                                else "Last lines of its stderr:", DIM))
+                    out += [("      " + line, FG) for line in rep.stderr_tail]
+            if stale:
+                out.append(("", FG))
+                out.append(("The code has changed since this check: Check again.", WARN))
+        out += self._tournament_trouble(i)
+        return out
+
+    def _tournament_trouble(self, i):
+        """Timeouts, crashes, forfeits and stray output in the tournament, with
+        the end of the bot's stderr from it."""
+        if not self.tour:
+            return []
+        got = self.tour.stats_objects()
+        st = got[i].summary() if i in got and got[i].loaded else None
+        if not st:
+            return []
+        bits = [f"{st[k]} {label}" for k, label in (("timeouts", "timeouts"), ("crashes", "crashes"),
+                                                    ("forfeits", "forfeited rounds"),
+                                                    ("junk_lines", "stray stdout lines")) if st.get(k)]
+        if not bits:
+            return []
+        out = [("", FG), ("In the tournament: " + ", ".join(bits), DOWN)]
+        folder = self.run_info.get("log_dir") or (
+            os.path.join(os.path.dirname(self.tour.path), "logs") if self.tour.path else None)
+        name = self.specs[i]["name"]
+        logs = sorted(glob.glob(os.path.join(glob.escape(folder), glob.escape(name) + ".w*.log")),
+                      key=os.path.getmtime) if folder and os.path.isdir(folder) else []
+        tail = []
+        for path in logs[-2:]:
+            try:
+                with open(path, errors="replace") as f:
+                    tail += f.read().splitlines()
+            except OSError:
+                pass
+        if tail:
+            out.append((f"Last lines of its stderr in the tournament ({folder}):", DIM))
+            out += [("      " + line, FG) for line in tail[-20:]]
+        return out
 
     def _layout_board(self):
         if self.board is None:

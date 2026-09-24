@@ -525,6 +525,7 @@ class BaseApp:
         self.team_specs = []     # your bots, or the teams from a manifest
         self.house_specs = []    # house (reference) bots
         self.check_status = {}   # bot name -> "ok" | "warn" | "fail"
+        self.check_reports = {}  # bot name -> its last check: {"report" | "build_error", "code", "at"}
         self.card = None         # report card over the stages (check results)
         self.ui_q = queue.Queue()
         self.engine = None
@@ -1164,6 +1165,9 @@ class BaseApp:
         kept.update(added=True, kept_from=spec["name"], version=k, kept_order=self.keeps)
         if spec["name"] in self.check_status:
             self.check_status[kept["name"]] = self.check_status[spec["name"]]  # the same code
+        if spec["name"] in self.check_reports:
+            self.check_reports[kept["name"]] = dict(self.check_reports[spec["name"]],
+                                                    code=harness.code_hash(kept))
         # Next to the bot it came from, newest first.
         at = self.team_specs.index(spec) + 1 if spec in self.team_specs else len(self.team_specs)
         self.team_specs.insert(at, kept)
@@ -1262,17 +1266,28 @@ class BaseApp:
             ok, out = build(spec)
             if not ok:
                 card(state="done", build_error=out)
+                self._report(spec, build_error=out)
                 self.ui_q.put(("status", (name, "fail")))
                 self.log(f"{name}: build failed", DOWN)
                 return
             card(state="running")
             rep = harness.smoke_test(spec["cmd"], cwd=spec["cwd"])
             card(state="done", report=rep)
+            self._report(spec, report=rep)
             self.ui_q.put(("status", (name, rep.worst)))
             self.log(f"{name}: " + {"ok": "PASS. Now run a tournament.", "warn": "passed with warnings",
                                     "fail": "FAIL; see the report card"}[rep.worst],
                      {"ok": UP, "warn": WARN, "fail": DOWN}[rep.worst])
         self._work(work)
+
+    def _report(self, spec, **result):
+        """Keep a bot's full check result (thread-safe), with the fingerprint
+        of the code it was run on, so it can be shown when the bot is picked."""
+        self.ui_q.put(("report", (spec["name"], dict(result, code=harness.code_hash(spec),
+                                                     at=time.strftime("%H:%M")))))
+
+    def _report_updated(self, name):
+        pass  # the Arena shows the report beside the board
 
     def watch(self):
         i, j = self.selected
@@ -1498,6 +1513,10 @@ class BaseApp:
                 elif kind == "status":
                     name, status = payload
                     self.check_status[name] = status
+                elif kind == "report":
+                    name, result = payload
+                    self.check_reports[name] = result
+                    self._report_updated(name)
         except queue.Empty:
             pass
         if redraw_card:
@@ -1621,6 +1640,7 @@ class BaseApp:
             return False
         self.team_specs = specs
         self.check_status = {}
+        self.check_reports = {}
         self._field_changed()
         self.log(f"Loaded {len(specs)} team bots from {os.path.basename(path)}.", UP)
         return True
@@ -1671,10 +1691,12 @@ class BaseApp:
             for spec in teams:
                 ok, out = build(spec)
                 if not ok:
+                    self._report(spec, build_error=out)
                     r = {"name": spec["name"], "status": "fail",
                          "reason": "build failed: " + (out.strip().splitlines() or ["?"])[-1]}
                 else:
                     rep = harness.smoke_test(spec["cmd"], cwd=spec["cwd"])
+                    self._report(spec, report=rep)
                     bad = next((k for k in rep.checks if k.status == rep.worst and k.status != "ok"), None)
                     reason = f"{bad.label}: {bad.detail.splitlines()[0]}" if bad and bad.detail else \
                         (bad.label if bad else "all checks passed")
