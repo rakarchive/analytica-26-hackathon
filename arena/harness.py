@@ -154,6 +154,7 @@ class ProcessPlayer:
         self.stats = BotStats()
         self.proc = None
         self.last_error = None
+        self.crash_marks = []    # where the stderr file had got to at each crash
         self._lines = None
         self._fresh = False      # next reply gets the startup allowance
         self._late = False       # a timed-out reply is still owed
@@ -196,6 +197,15 @@ class ProcessPlayer:
     def _crash(self, why):
         self.stats.crashes += 1
         self.last_error = why
+        if self.proc is not None:
+            try:
+                self.proc.wait(timeout=1)    # let it finish writing its last words
+            except Exception:
+                pass
+        try:
+            self.crash_marks.append(self.stderr.tell())
+        except (AttributeError, OSError, ValueError):
+            pass                             # stderr is not a file we can look into
         if self.proc is not None and self.proc.poll() is not None:
             self.last_error += f" (exit code {self.proc.returncode})"
         if self._fresh:
@@ -397,10 +407,7 @@ FLUSH_HINTS = """\
   Python : print(move, flush=True)
   Java   : System.out.println(move); System.out.flush();
   C++    : std::cout << move << std::endl;     (endl flushes; "\\n" does not)
-  C      : printf("%c\\n", move); fflush(stdout);
-  Rust   : println!(..); std::io::stdout().flush().unwrap();
-  Go     : use fmt.Println on os.Stdout directly, or w.Flush() after each move
-  Node   : process.stdout.write(move + "\\n")   (read input with readline)"""
+  C      : printf("%c\\n", move); fflush(stdout);"""
 
 
 @dataclass
@@ -416,6 +423,7 @@ class SmokeReport:
     checks: list
     stats: BotStats
     stderr_tail: list = field(default_factory=list)
+    crashed: bool = False    # then stderr_tail ends where it first crashed
 
     @property
     def worst(self):
@@ -438,12 +446,16 @@ def smoke_test(cmd, cwd=None, rounds=200):
     """Check a bot speaks the protocol. Returns a SmokeReport."""
     import tempfile
     with tempfile.TemporaryFile() as err:
-        checks, ok, stats = _smoke(cmd, cwd, rounds, err)
+        checks, ok, stats, marks = _smoke(cmd, cwd, rounds, err)
         tail = []
-        if not ok:
+        if not ok or any(c.status != "ok" for c in checks):
+            # A bot that crashed is restarted and carries on writing, so the
+            # lines worth seeing are the ones just before its first crash.
+            end = marks[0] if marks else None
             err.seek(0)
-            tail = err.read().decode("utf-8", "replace").strip().splitlines()[-15:]
-    return SmokeReport(ok, checks, stats, tail)
+            text = err.read(end) if end is not None else err.read()
+            tail = text.decode("utf-8", "replace").strip().splitlines()[-15:]
+    return SmokeReport(ok, checks, stats, tail, crashed=bool(marks))
 
 
 def _smoke(cmd, cwd, rounds, stderr):
@@ -456,7 +468,7 @@ def _smoke(cmd, cwd, rounds, stderr):
     bot.reset()
     if bot._dead:
         checks.append(Check("fail", "Starts", bot.last_error))
-        return checks, False, bot.stats
+        return checks, False, bot.stats, bot.crash_marks
     t0 = time.perf_counter()
     bot.request(None, None)
     move, status = bot.response()
@@ -466,10 +478,10 @@ def _smoke(cmd, cwd, rounds, stderr):
                             "is not flushed after each move:\n" + FLUSH_HINTS +
                             "\nAlso check it reads one line per message and doesn't wait for EOF."))
         bot._kill()
-        return checks, False, bot.stats
+        return checks, False, bot.stats, bot.crash_marks
     if status == "crash":
         checks.append(Check("fail", "Replies to its first move", f"crashed: {bot.last_error}"))
-        return checks, False, bot.stats
+        return checks, False, bot.stats, bot.crash_marks
     checks.append(Check("ok", "Starts and replies",
                         f"first move: {GAME.past[move]}, "
                         f"after {(time.perf_counter() - t0) * 1000:.0f} ms"))
@@ -512,7 +524,7 @@ def _smoke(cmd, cwd, rounds, stderr):
     speed = "fail" if s["timeouts"] else "warn" if s["max_ms"] > 25 or s["mean_ms"] > 1 else "ok"
     checks.append(Check(speed, "Speed", f"mean {s['mean_ms']:.2f} ms  ·  p99 {s['p99_ms']:.2f} ms  ·  "
                                         f"max {s['max_ms']:.1f} ms  (limit {MOVE_TIMEOUT * 1000:.0f} ms)"))
-    return checks, ok, bot.stats
+    return checks, ok, bot.stats, bot.crash_marks
 
 
 # --------------------------------------------------------------------------
