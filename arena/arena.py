@@ -292,7 +292,7 @@ class Arena(BaseApp):
         if already:
             self._redraw_match_list()   # the viewer is already in place: just mark the new one
         else:
-            self.layout()               # lays the viewer out in the log's place
+            self._refresh_side()        # lays the viewer out in the log's place
         self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
                              title=f"repetition {m['r'] + 1}")   # the names are already on show
         self.stages[0].reveal()
@@ -300,7 +300,7 @@ class Arena(BaseApp):
     def close_match(self):
         self.viewing = None
         self.stages[0].match = None
-        self.layout()
+        self._refresh_side()
 
     # ---------------- layout ----------------
 
@@ -330,21 +330,53 @@ class Arena(BaseApp):
         self.cv.create_window(left + add.winfo_reqwidth() + gap, H - m, window=keep, anchor="sw")
         self._refresh_buttons()     # the help line and what can be pressed follow the layout
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
-        # A match being looked at takes the log's place, and more of the column.
-        match_open = bool(self.viewing) and self.side_tab == "matches" and self.state != "running"
-        panel_h = avail * (0.42 if match_open else 0.64)
-        self.card_box = (rx, top, rw, panel_h)
-        self.log_box = (rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2)
+        self._column = (rx, top, rw, avail, m)
+        match_open = self._split_column()
         self._place_log(not match_open)
         if match_open:
             self.stages[0].layout(*self.log_box)
         self._layout_board()
         if self.card:
             return                  # a check under way: drawn over this spot (_draw_overlays)
+        self._draw_column_panel()
+
+    def _split_column(self):
+        """The right-hand column: the panel, and under it the log, or the match
+        being looked at, which then takes more of the column."""
+        rx, top, rw, avail, m = self._column
+        match_open = bool(self.viewing) and self.side_tab == "matches" and self.state != "running"
+        panel_h = avail * (0.42 if match_open else 0.64)
+        self.card_box = (rx, top, rw, panel_h)
+        self.log_box = (rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2)
+        return match_open
+
+    def _draw_column_panel(self):
         if self.state == "running":
             self._draw_run_panel(*self.card_box)
+        else:
+            self._draw_side(*self.card_box)
+
+    def _refresh_side(self):
+        """Redraw the right-hand column alone, for a new tab, a new pick or an
+        opened match. A full layout takes down and puts back the log and every
+        button, which flickers; here the log is only moved or hidden."""
+        if not hasattr(self, "_column") or not getattr(self, "log_win", None):
+            self.layout()
             return
-        self._draw_side(*self.card_box)
+        cv = self.cv
+        self.tip.hide()
+        cv.delete("panel")
+        cv.delete("card")           # a finished check's card, if it was up
+        cv.delete(self.stages[0].tag)
+        match_open = self._split_column()
+        self._move_log(not match_open)
+        if match_open:
+            self.stages[0].layout(*self.log_box)
+        if self.card:
+            self._draw_card()
+        else:
+            self._draw_column_panel()
+        self._refresh_buttons()
 
     def _place_log(self, visible):
         x, y, w, h = self.log_box
@@ -352,9 +384,21 @@ class Arena(BaseApp):
         self.log_win = self.cv.create_window(x, y, window=self.logbox, anchor="nw",
                                              width=max(1, w - sw), height=max(1, h),
                                              state="normal" if visible else "hidden")
+        self.log_sb_win = None
         if hasattr(self, "log_sb"):
-            self.cv.create_window(x + w, y, window=self.log_sb, anchor="ne", width=sw, height=max(1, h),
-                                  state="normal" if visible else "hidden")
+            self.log_sb_win = self.cv.create_window(x + w, y, window=self.log_sb, anchor="ne", width=sw,
+                                                    height=max(1, h), state="normal" if visible else "hidden")
+
+    def _move_log(self, visible):
+        """Put the log (and its scrollbar) in the current log box without
+        taking it down, so it doesn't blink."""
+        x, y, w, h = self.log_box
+        sw, state = 10 * self.scale, "normal" if visible else "hidden"
+        self.cv.coords(self.log_win, x, y)
+        self.cv.itemconfig(self.log_win, width=max(1, w - sw), height=max(1, h), state=state)
+        if self.log_sb_win:
+            self.cv.coords(self.log_sb_win, x + w, y)
+            self.cv.itemconfig(self.log_sb_win, height=max(1, h), state=state)
 
     # ---------------- one picked bot: its results and its check ----------------
 
@@ -540,7 +584,7 @@ class Arena(BaseApp):
         self.side_tab = key
         if key != "matches":
             self.viewing = None
-        self.layout()
+        self._refresh_side()
 
     def _tournament_trouble(self, i):
         """One line on what went wrong for the bot in the tournament, if anything."""
@@ -786,7 +830,7 @@ class Arena(BaseApp):
         self.viewing, self.explorer_top = None, 0
         self.stages[0].match = None
         self.side_tab = self._default_tab()
-        self.layout()
+        self._refresh_side()        # the board shows the pick by itself, every frame
 
     def _log_breakdown(self, i):
         pass  # the standings view shows this properly
