@@ -1,6 +1,4 @@
-/* A bot in C. Build and run it with:
- *     gcc -O2 -o my_bot my_bot.c -lm
- *     my_bot
+/* A bot in C.
  * Print only your moves. For debugging, use fprintf(stderr, ...) instead.
  */
 

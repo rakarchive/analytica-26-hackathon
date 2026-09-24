@@ -1,6 +1,4 @@
-// A bot in Java. Build and run it with:
-//     javac MyBot.java
-//     java MyBot
+// A bot in Java.
 // Print only your moves. For debugging, use System.err.println(...) instead.
 
 import java.util.Scanner;

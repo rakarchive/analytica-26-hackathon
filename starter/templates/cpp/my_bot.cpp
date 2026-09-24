@@ -1,6 +1,4 @@
-// A bot in C++. Build and run it with:
-//     g++ -O2 -std=c++17 -o my_bot my_bot.cpp
-//     my_bot
+// A bot in C++.
 // Print only your moves. For debugging, use std::cerr instead.
 
 #include <iostream>
