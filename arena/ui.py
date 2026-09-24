@@ -510,14 +510,110 @@ class FlatButton(tk.Label):
         self.config(bg=self.bg if on else PANEL, fg=FG if on else FAINT)
 
 
+class Tooltip:
+    """A short note that appears when the pointer rests on something: a
+    widget (attach) or a tag on a canvas (attach_tag). The text can be a
+    function, for notes that depend on the moment."""
+
+    DELAY = 450  # ms
+
+    def __init__(self, root):
+        self.root, self.win, self.pending = root, None, None
+
+    def attach(self, widget, text):
+        widget.bind("<Enter>", lambda e: self._later(e, text), add="+")
+        widget.bind("<Leave>", lambda e: self.hide(), add="+")
+        widget.bind("<ButtonPress>", lambda e: self.hide(), add="+")
+
+    def attach_tag(self, canvas, tag, text):
+        canvas.tag_bind(tag, "<Enter>", lambda e: self._later(e, text), add="+")
+        canvas.tag_bind(tag, "<Leave>", lambda e: self.hide(), add="+")
+        canvas.tag_bind(tag, "<ButtonPress>", lambda e: self.hide(), add="+")
+
+    def _later(self, event, text):
+        self.hide()
+        x, y = event.x_root, event.y_root
+        self.pending = self.root.after(self.DELAY, lambda: self._show(text() if callable(text) else text, x, y))
+
+    def _show(self, text, x, y):
+        self.pending = None
+        if not text:
+            return
+        self.win = tk.Toplevel(self.root)
+        self.win.wm_overrideredirect(True)
+        try:
+            self.win.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        tk.Label(self.win, text=text, bg="#2b3346", fg=FG, justify="left", wraplength=380,
+                 padx=10, pady=6).pack()
+        self.win.update_idletasks()
+        # Below and to the right of the pointer, kept on the screen.
+        w, h = self.win.winfo_reqwidth(), self.win.winfo_reqheight()
+        x = min(x + 14, self.root.winfo_screenwidth() - w - 8)
+        y = y + 20 if y + 20 + h < self.root.winfo_screenheight() else y - h - 12
+        self.win.geometry(f"+{int(x)}+{int(y)}")
+
+    def hide(self):
+        if self.pending:
+            self.root.after_cancel(self.pending)
+            self.pending = None
+        if self.win is not None:
+            self.win.destroy()
+            self.win = None
+
+
+class ThinScrollbar(tk.Canvas):
+    """A slim scrollbar in the app's colours: a thumb in a track, dragged,
+    or clicked above or below to jump. set(first, last) says what part is in
+    view (as fractions, like tk's own scrollbars); command(first) is called
+    with the fraction that should come to the top."""
+
+    def __init__(self, parent, command, width=10):
+        super().__init__(parent, width=width, bg=PANEL, highlightthickness=0, bd=0, cursor="arrow")
+        self.command, self.first, self.last, self.grab = command, 0.0, 1.0, None
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Button-1>", self._press)
+        self.bind("<B1-Motion>", self._drag)
+        self.bind("<ButtonRelease-1>", lambda e: setattr(self, "grab", None))
+
+    def set(self, first, last):
+        self.first, self.last = float(first), float(last)
+        self._draw()
+
+    def _draw(self):
+        self.delete("all")
+        if self.last - self.first >= 1.0:
+            return                          # everything fits: no thumb
+        h, w = self.winfo_height(), self.winfo_width()
+        y0, y1 = self.first * h, max(self.first * h + 18, self.last * h)
+        self.create_rectangle(2, y0 + 1, w - 2, y1 - 1, fill=LINE, outline="")
+
+    def _press(self, e):
+        h = max(1, self.winfo_height())
+        span = self.last - self.first
+        if self.first * h <= e.y <= self.last * h:
+            self.grab = e.y / h - self.first         # dragging the thumb
+        else:
+            self.grab = span / 2                     # jump: centre the thumb on the click
+            self.command(max(0.0, min(1.0 - span, e.y / h - self.grab)))
+
+    def _drag(self, e):
+        if self.grab is None:
+            return
+        span = self.last - self.first
+        self.command(max(0.0, min(1.0 - span, e.y / max(1, self.winfo_height()) - self.grab)))
+
+
 # --------------------------------------------------------------------------
 # The app shell shared by the toolkit and the event app
 # --------------------------------------------------------------------------
 
 class BaseApp:
-    _card_tag = "card"   # the tag card drawings go under (see _draw_check_card)
     """Board, stages, check cards, runs. Subclasses add their toolbar and,
     for the event app, the presentation."""
+
+    _card_tag = "card"   # the tag card drawings go under (see _draw_check_card)
 
     TITLE = "ANALYTICA - INTEGRATE AND CONQUER"
 
@@ -864,7 +960,8 @@ class BaseApp:
         m = 28 * s
         self.m = m
         cv.create_text(m, 20 * s, text=self.TITLE, anchor="nw", fill=FG, font=self.f_title)
-        self.status = cv.create_text(W - m, 30 * s, text="", anchor="ne", fill=DIM, font=self.f_status)
+        right = self._header_right(W, m, s)
+        self.status = cv.create_text(right, 46 * s, text="", anchor="e", fill=DIM, font=self.f_status)
         self.bar_box = (m, 82 * s, W - m, 92 * s)
         cv.create_rectangle(*self.bar_box, fill=PANEL2, width=0)
         self.bar_played = cv.create_rectangle(m, 82 * s, m, 92 * s, fill=LINE, width=0)
@@ -1626,6 +1723,11 @@ class BaseApp:
             if r["cache"].get("bg") != (bg, outline):
                 cv.itemconfig(r["bg"], fill=bg, outline=outline, width=3 if outline else 0)
                 r["cache"]["bg"] = (bg, outline)
+
+    def _header_right(self, W, m, s):
+        """Where the header's status text ends; a subclass can put things
+        to its right."""
+        return W - m
 
     def _update_header(self):
         if not self.rows:
