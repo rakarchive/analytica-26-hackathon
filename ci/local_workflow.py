@@ -15,7 +15,10 @@ It works on a snapshot of one commit, extracted under .ci/work, so the
 working tree can change while it runs. Runs take turns. The log, the
 status, the app and Arena.zip end up in .ci/runs/<branch>/.
 
-    python ci/local_workflow.py [--commit REV] [--branch NAME] [--notify]
+    python ci/local_workflow.py [--commit REV] [--branch NAME] [--notify] [--launch GAME]
+
+With --launch ipd, a build of that game that passes is opened straight
+away, replacing the one the last run opened.
 
 The post-commit hook runs it in the background after every commit:
 
@@ -23,7 +26,7 @@ The post-commit hook runs it in the background after every commit:
     repo=$(git rev-parse --show-toplevel)
     py="$repo/.ci/python-tk/bin/python3"; [ -x "$py" ] || py=python3
     nohup "$py" "$repo/ci/local_workflow.py" --commit "$(git rev-parse HEAD)" \\
-        --branch "$(git rev-parse --abbrev-ref HEAD)" --notify >/dev/null 2>&1 &
+        --branch "$(git rev-parse --abbrev-ref HEAD)" --notify --launch ipd >/dev/null 2>&1 &
 
 It needs a Python with tkinter (the one it runs on, or --python), a JDK,
 and gcc/g++. A .ci/jdk folder is put on the PATH if there is one.
@@ -231,6 +234,29 @@ class Run:
         zipped = shutil.make_archive(os.path.join(self.out, "Arena"), "zip", package)
         self.log(f"{os.path.relpath(zipped, ROOT)} ({os.path.getsize(zipped) / 1e6:.1f} MB)")
 
+    def launch(self):
+        """Open the app just built and tested, closing the one the last run
+        opened (only that one: an Arena started any other way is left be)."""
+        self.step("Open the new build")
+        app_dir = os.path.join(self.out, "Arena.app")
+        built_app = os.path.join(self.arena, "dist", "Arena.app")
+        if sys.platform == "darwin" and os.path.isdir(built_app):
+            subprocess.run(["pkill", "-f", os.path.join(app_dir, "Contents", "MacOS", "Arena")],
+                           capture_output=True)
+            time.sleep(1)
+            shutil.rmtree(app_dir, ignore_errors=True)
+            shutil.copytree(built_app, app_dir, symlinks=True)
+            subprocess.run(["open", app_dir], capture_output=True)
+            self.log(f"opened {os.path.relpath(app_dir, ROOT)}")
+            return
+        exe = os.path.join(self.out, "Arena" + EXE)
+        if not WINDOWS:
+            subprocess.run(["pkill", "-f", exe], capture_output=True)
+            time.sleep(1)
+        shutil.copy2(self.exe, exe)
+        subprocess.Popen([exe], cwd=self.out, start_new_session=not WINDOWS)
+        self.log(f"opened {os.path.relpath(exe, ROOT)}")
+
     def go(self):
         self.snapshot()
         self.which_game()
@@ -280,6 +306,7 @@ def main():
     ap.add_argument("--branch")
     ap.add_argument("--python", default=sys.executable, help="a Python with tkinter")
     ap.add_argument("--notify", action="store_true", help="a desktop notification when done")
+    ap.add_argument("--launch", metavar="GAME", help="open the new build if it passes and plays GAME")
     args = ap.parse_args()
     commit = subprocess.run(["git", "rev-parse", args.commit], cwd=ROOT, capture_output=True,
                             text=True, check=True).stdout.strip()
@@ -294,6 +321,8 @@ def main():
     try:
         run.go()
         ok = True
+        if args.launch and run.key == args.launch:
+            run.launch()
     except Failed as e:
         run.log(f"FAILED: {e}")
     except Exception as e:  # a bug in this script, or a tool missing
