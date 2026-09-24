@@ -1059,16 +1059,16 @@ class BaseApp:
                                fill=color, font=self.f_card_detail, tags=self._card_tag)
             lx = cv.bbox(t)[2] + 22 * s
 
-    def _draw_summary_card(self, x, y, w, h, s):
-        cv, c = self.cv, self.card
+    def _draw_summary_card(self, x, y, w, h, s, card=None):
+        cv, c = self.cv, (card if card is not None else self.card)
         pad = 28 * s
         results = c["results"]
         n_total = c["total"]
         passed = sum(1 for r in results if r["status"] != "fail")
         cv.create_text(x + pad, y + 20 * s, text="CHECK ALL TEAMS", anchor="nw", fill=FAINT,
-                       font=self.f_head, tags="card")
+                       font=self.f_head, tags=self._card_tag)
         cv.create_text(x + pad, y + 44 * s, text=f"{passed} of {n_total} ready", anchor="nw", fill=FG,
-                       font=self.f_stage_name, tags="card")
+                       font=self.f_stage_name, tags=self._card_tag)
         if c["state"] != "done":
             self._pill(x + w, y + 24 * s, f"CHECKING {len(results) + 1}/{n_total}…", ACCENT)
         else:
@@ -1084,17 +1084,17 @@ class BaseApp:
             ry = top + k * rh + rh / 2
             color, sym = self.STATUS_STYLE[r["status"]]
             d = rh * 0.3
-            cv.create_oval(x + pad, ry - d, x + pad + 2 * d, ry + d, fill=color, width=0, tags="card")
+            cv.create_oval(x + pad, ry - d, x + pad + 2 * d, ry + d, fill=color, width=0, tags=self._card_tag)
             cv.create_text(x + pad + 2 * d + 12 * s, ry, text=r["name"], anchor="w", fill=FG,
-                           font=f_name, tags="card")
+                           font=f_name, tags=self._card_tag)
             cv.create_text(x + w * 0.42, ry, text=r["reason"], anchor="w", fill=color if r["status"] != "ok"
-                           else DIM, font=f_det, tags="card", width=w * 0.42)
+                           else DIM, font=f_det, tags=self._card_tag, width=w * 0.42)
             if r.get("mean_ms") is not None:
                 cv.create_text(x + w - pad, ry, text=f"{r['mean_ms']:.2f} ms", anchor="e", fill=DIM,
-                               font=f_det, tags="card")
+                               font=f_det, tags=self._card_tag)
         if c.get("projection"):
             cv.create_text(x + pad, y + h - 40 * s, text=c["projection"], anchor="w", fill=FG,
-                           font=self.f_card_detail, tags="card")
+                           font=self.f_card_detail, tags=self._card_tag)
 
     def log(self, text, color=FG):
         """Thread-safe."""
@@ -1289,6 +1289,9 @@ class BaseApp:
 
     def _report_updated(self, name):
         pass  # the Arena shows the report beside the board
+
+    def _card_changed(self):
+        pass  # the Arena moves a finished check into its Check tab
 
     def watch(self):
         i, j = self.selected
@@ -1511,6 +1514,7 @@ class BaseApp:
                 elif kind == "card":
                     self.card = payload
                     redraw_card = True
+                    self._card_changed()
                 elif kind == "status":
                     name, status = payload
                     self.check_status[name] = status

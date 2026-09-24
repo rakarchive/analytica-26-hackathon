@@ -37,9 +37,11 @@ from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,
 # per run, so there is never an old one in the way.
 TOURNAMENT_DIR = os.path.join(tempfile.gettempdir(), "arena-tournaments")
 
-# Two places to be: your bots and how they did, and the matches themselves.
-# Everything else lives under Options.
-VIEWS = [("bots", "Bots"), ("matches", "Matches")]
+# One screen: the board, and beside it a panel whose tabs follow what is
+# picked on the board. Everything else lives under Options.
+TABS = {0: (("results", "Results"), ("check", "Check"), ("matches", "Matches")),
+        1: (("results", "Results"), ("check", "Check"), ("matches", "Matches")),
+        2: (("results", "Compare"), ("matches", "Matches"))}
 
 
 class Arena(BaseApp):
@@ -55,14 +57,15 @@ class Arena(BaseApp):
         self._panel_at = 0.0
         self.explorer_top = 0        # first row shown in the match list
         self.explorer_rows = []      # the matches currently listed
-        self.explorer_filter = None  # a bot index, or None for all
         self.explorer_note = ""
+        self.viewing = None          # the match open in the Matches tab
+        self.last_summary = None     # the last Check all's results
         super().__init__(root)
-        self.bot_tab = "results"   # which tab a picked bot's panel is on
+        self.side_tab = "check"    # which tab the panel beside the board is on
         root.bind("<MouseWheel>", self._wheel)
         root.bind("<Button-4>", lambda e: self._wheel(e, 1))
         root.bind("<Button-5>", lambda e: self._wheel(e, -1))
-        self.show_view("bots")
+        self.layout()
         self.log("Add your bots, check them, then run a tournament. The results appear beside "
                  "the board; Matches holds every match played.", FG)
 
@@ -99,33 +102,15 @@ class Arena(BaseApp):
     def _build_toolbar(self, tb):
         bar = tk.Frame(tb, bg=BG)
         bar.pack(fill="x")
-        self.view_buttons = {}
-        for key, text in VIEWS:
-            b = FlatButton(bar, text, lambda k=key: self.show_view(k))
-            b.pack(side="left", padx=(0, 6))
-            self.view_buttons[key] = b
-
-        holder = tk.Frame(bar, bg=BG)
-        holder.pack(side="left", padx=(12, 0))
-        self.actions = {}
-
-        def actions_for(view):
-            f = tk.Frame(holder, bg=BG)
-            self.actions[view] = f
-            return f
-
-        f = actions_for("bots")
-        for key, text, cmd in (("add", "+ Add bot", self.add_bot), ("check", "Check", self.check),
-                               ("checkall", "Check all", self.check_all),
+        for key, text, cmd in (("add", "+ Add bot", self.add_bot),
                                ("keep", "Keep this version", self.keep_selected)):
-            b = FlatButton(f, text, cmd)
+            b = FlatButton(bar, text, cmd)
             b.pack(side="left", padx=(0, 8))
             self.buttons[key] = b
-
-        f = actions_for("matches")
-        for text, cmd in (("Only the selected bot", self.filter_selected),
-                          ("All matches", self.filter_none)):
-            FlatButton(f, text, cmd).pack(side="left", padx=(0, 8))
+        # Buttons that sit in the panel's tabs, placed there at each layout.
+        self.panel_buttons = {"check": FlatButton(self.cv, "Check", self.check),
+                              "checkall": FlatButton(self.cv, "Check all", self.check_all),
+                              "back": FlatButton(self.cv, "‹ All matches", self.close_match)}
 
         self.buttons["run"] = FlatButton(bar, "Run tournament", self.run_or_stop, primary=True)
         self.buttons["run"].pack(side="left", padx=(16, 8))
@@ -178,28 +163,14 @@ class Arena(BaseApp):
         self.opt_button.config(text="Options ▾" if self.options_open else "Options ▸")
         self.layout()
 
-    def show_view(self, view):
-        self.view = view
-        for key, b in self.view_buttons.items():
-            b.bg = ACCENT if key == view else PANEL2
-            b.hover_bg = "#6f9cf2" if key == view else LINE
-            b.set_enabled(True)
-        for key, f in self.actions.items():
-            f.pack_forget()
-        self.actions[view].pack(side="left")
-        if view == "matches":
-            self._build_explorer_rows()
-        self.layout()
-        self._refresh_buttons()
-
     def _refresh_buttons(self):
         if not self.buttons or not hasattr(self, "hint"):
             return
         idle = not self.working and self.state in ("ready", "final")
         has_team = any(s["kind"] == "team" for s in self.specs)
         self.buttons["add"].set_enabled(idle)
-        self.buttons["check"].set_enabled(idle and has_team)
-        self.buttons["checkall"].set_enabled(idle and has_team)
+        self.panel_buttons["check"].set_enabled(idle and self._report_bot() is not None)
+        self.panel_buttons["checkall"].set_enabled(idle and has_team)
         self.buttons["keep"].set_enabled(idle and self._keep_target() is not None)
         self.buttons["run"].set_enabled(not self.working or self.state in ("running", "paused"))
         self.buttons["run"].config(text="Stop" if self.state in ("running", "paused")
@@ -210,15 +181,15 @@ class Arena(BaseApp):
         """One line saying what to do here."""
         if self.state == "running":
             return "playing…"
-        if self.view == "bots":
-            if not any(s.get("added") for s in self.specs):
-                return "add your bot, then Check it"
-            if not self.tour:
-                return "Check a bot, or Run tournament. Keep this version before a big change"
-            if len(self.selected) >= 2:
-                return "comparing the two selected bots"
-            return "click a bot for its record, two to compare them"
-        return getattr(self, "explorer_note", "click a match to watch it")
+        if not any(s.get("added") for s in self.specs) and not self.tour:
+            return "add your bot, then Check it"
+        if len(self.selected) >= 2:
+            return "comparing the two picked bots · click one again to drop it"
+        if self.selected:
+            return "click another bot to compare the two · click this one again to let go"
+        if not self.tour:
+            return "Check your bots, then Run tournament. Keep this version before a big change"
+        return "click a bot for its results and check, two to compare them"
 
     # ---------------- tournament files ----------------
 
@@ -263,7 +234,7 @@ class Arena(BaseApp):
                  f"({tour.n} bots, {tour.reps} per pairing, seed {tour.seed}).", UP)
         if not tour.complete():
             self.log("It is unfinished: Run tournament carries on with it.", DIM)
-        self.show_view("bots")
+        self.layout()
         return True
 
     def export_csv(self):
@@ -291,53 +262,43 @@ class Arena(BaseApp):
 
     # ---------------- explorer ----------------
 
-    def filter_selected(self):
-        self.explorer_filter = self.selected[-1] if self.selected else None
-        self.show_view("matches")
-
-    def filter_none(self):
-        self.explorer_filter = None
-        self.show_view("matches")
-
     def _build_explorer_rows(self):
+        """The matches of whatever is picked: all of them, one bot's, or the
+        ones between two bots."""
         ms = self.matches or []
-        if self.explorer_filter is not None:
-            f = self.explorer_filter
-            ms = [m for m in ms if f in (m["i"], m["j"])]
+        picked = set(self.selected)
+        if len(picked) == 1:
+            ms = [m for m in ms if picked & {m["i"], m["j"]}]
+        elif len(picked) == 2:
+            ms = [m for m in ms if {m["i"], m["j"]} == picked]
         self.explorer_rows = ms
-        who = "every bot" if self.explorer_filter is None else self.display_name(self.explorer_filter)
-        self.explorer_note = f"{len(ms):,} matches · {who} · click one to watch it"
 
     def _wheel(self, event, direction=None):
-        if self.view != "matches" or not self.explorer_rows:
+        if self.side_tab != "matches" or self.viewing or not self.explorer_rows:
             return
         step = direction if direction is not None else (1 if event.delta > 0 else -1)
         self.explorer_top = max(0, self.explorer_top - step * 3)
         self.layout()
 
     def open_match(self, m):
-        """Show one match from the file in the viewer, all of it at once."""
+        """Show one match in the Matches tab, all of it at once."""
+        self.viewing = m
+        self.layout()               # lays the viewer out in the tab
         self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
                              title=f"repetition {m['r'] + 1}")   # the names are already on show
         self.stages[0].reveal()
 
+    def close_match(self):
+        self.viewing = None
+        self.stages[0].match = None
+        self.layout()
+
     # ---------------- layout ----------------
 
     def _layout_content(self, W, H, top, m):
-        """Always the same shape: a list on the left, a panel on the right."""
-        view = self.view
+        """Always the same shape: the board on the left; on the right the
+        panel, with tabs that follow what is picked, above the log."""
         avail = H - top - m
-        if view == "matches":
-            lw = W * 0.44
-            self.board = None
-            self.list_box = (m, top, lw - m / 2, avail)
-            self.card_box = (lw + m / 2, top, W - m - (lw + m / 2), avail)
-            self.log_box = (0, 0, 1, 1)
-            self._place_log(False)
-            self.stages[0].layout(*self.card_box)
-            self._draw_match_list(*self.list_box)
-            return
-        # Bots: the board, and beside it whatever is current, above the log.
         bw = W * 0.5
         self.board = (m, top, bw - m / 2, H - m)
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
@@ -347,16 +308,11 @@ class Arena(BaseApp):
         self._place_log(True)
         self._layout_board()
         if self.card:
-            return                  # a check's result: drawn over this spot (_draw_overlays)
-        picked = self._report_bot()
-        if picked is not None and self.state != "running":
-            self._draw_bot_panel(picked, *self.card_box)
-        elif self.state == "running" or not self.tour:
+            return                  # a check under way: drawn over this spot (_draw_overlays)
+        if self.state == "running":
             self._draw_run_panel(*self.card_box)
-        elif len(self.selected) >= 2:
-            self._draw_stats(*self.card_box)
-        else:
-            self._draw_details(*self.card_box)
+            return
+        self._draw_side(*self.card_box)
 
     def _place_log(self, visible):
         x, y, w, h = self.log_box
@@ -368,38 +324,76 @@ class Arena(BaseApp):
 
     def _report_bot(self):
         """The team bot the panel is about, if exactly one is picked."""
-        if self.view == "bots" and len(self.selected) == 1:
+        if len(self.selected) == 1:
             i = self.selected[0]
             if i < self.n and self.specs[i]["kind"] == "team":
                 return i
         return None
 
-    def _default_tab(self, i):
-        """A bot that failed or warned its check opens on the check;
-        otherwise on its results, once there are any."""
-        if self.check_status.get(self.specs[i]["name"]) in ("fail", "warn") or not self.tour:
-            return "check"
+    def _tabs(self):
+        """(key, label, usable) for the panel's tabs, given what is picked."""
+        n = min(2, len(self.selected))
+        out = []
+        for key, label in TABS[n]:
+            if key == "check" and n == 1 and self._report_bot() is None:
+                continue            # a sparring partner: nothing to check
+            usable = {"results": n == 0 or bool(self.tour), "matches": bool(self.tour)}.get(key, True)
+            if key == "check":
+                name = self.specs[self.selected[0]]["name"] if n == 1 else None
+                status = self.check_status.get(name) if name else None
+                label += {"ok": "  ✓", "warn": "  !", "fail": "  ✗"}.get(status, "")
+            out.append((key, label, usable))
+        return out
+
+    def _default_tab(self):
+        """Where the panel opens after the pick changes: a bot that failed or
+        warned its check opens on the check; otherwise the results, once
+        there are any. The Matches tab stays open while you pick."""
+        keys = {k for k, _, ok in self._tabs() if ok}
+        if self.side_tab == "matches" and "matches" in keys:
+            return "matches"
+        one = self._report_bot()
+        if one is not None:
+            bad = self.check_status.get(self.specs[one]["name"]) in ("fail", "warn")
+            return "check" if bad or not self.tour else "results"
+        if not self.selected:
+            return "results" if self.tour else "check"
         return "results"
 
     def _report_updated(self, name):
         i = self._report_bot()
         if i is not None and self.specs[i]["name"] == name:
-            self.bot_tab = self._default_tab(i)
             self.layout()
 
-    def _draw_bot_panel(self, i, x, y, w, h):
-        """Two tabs over the panel: Results (the record against each
-        opponent) and Check (the bot's last protocol check, full size)."""
+    def _card_changed(self):
+        """A finished check moves into the Check tab: the bot's own, or, for
+        Check all, the one shown with nothing picked."""
+        c = self.card
+        if not c or c.get("state") != "done":
+            return
+        self.card = None
+        if c["kind"] == "check":
+            k = next((k for k, s in enumerate(self.specs) if s["name"] == c["name"]), None)
+            if k is not None:
+                self.selected = [k]
+        else:
+            self.last_summary = c
+            self.selected = []
+        self.side_tab = "check"
+        self.viewing = None
+        self.layout()
+
+    def _draw_side(self, x, y, w, h):
+        """The tabs, and under them the one that is open."""
         cv, s = self.cv, self.scale
-        name = self.specs[i]["name"]
-        status = self.check_status.get(name)
+        tabs = self._tabs()
+        keys = [k for k, _, ok in tabs if ok]
+        if self.side_tab not in keys:
+            self.side_tab = keys[0]
         tab_h = 44 * s
         tx = x
-        for key, label in (("results", "Results"), ("check", "Check")):
-            if key == "check" and status:
-                label += {"ok": "  ✓", "warn": "  !", "fail": "  ✗"}[status]
-            active = key == self.bot_tab
-            usable = key == "check" or bool(self.tour)
+        for key, label, usable in tabs:
+            active = key == self.side_tab
             t = cv.create_text(tx + 22 * s, y + tab_h / 2, text=label, anchor="w", font=self.f_card_label,
                                fill=(BG if active else FG if usable else FAINT), tags=("panel", f"tab_{key}"))
             x1 = cv.bbox(t)[2] + 22 * s
@@ -409,38 +403,86 @@ class Arena(BaseApp):
             if usable and not active:
                 cv.tag_bind(f"tab_{key}", "<Button-1>", lambda e, k=key: self._pick_tab(k))
             tx = x1 + 6 * s
+        by, bh = y + tab_h, h - tab_h
+        right = x + w                     # the tab strip's right end, for its button and notes
+        if self.side_tab == "results":
+            if not self.selected:
+                self._draw_run_panel(x, by, w, bh)
+            elif len(self.selected) == 1:
+                self._draw_details(x, by, w, bh)
+                trouble = self._tournament_trouble(self.selected[0])
+                if trouble:
+                    cv.create_text(x + w - 24 * s, by + 18 * s, anchor="ne", fill=DOWN,
+                                   font=self.f_card_detail, text=trouble, tags="panel")
+            else:
+                self._draw_stats(x, by, w, bh)
+        elif self.side_tab == "check":
+            key = "check" if self.selected else "checkall"
+            right = self._place_panel_button(key, right, y, tab_h)
+            if self.selected:
+                self._draw_bot_check(self.selected[0], x, by, w, bh, right, y + tab_h / 2)
+            else:
+                self._draw_all_checks(x, by, w, bh)
+        else:
+            if self.viewing:
+                self._place_panel_button("back", right, y, tab_h)
+                self.stages[0].layout(x, by, w, bh)
+            else:
+                self._build_explorer_rows()
+                self._draw_match_list(x, by, w, bh)
+
+    def _place_panel_button(self, key, right, y, tab_h):
+        """Put one of the panel's buttons at the right end of the tab strip;
+        returns where the space to its left ends."""
+        b = self.panel_buttons[key]
+        b.update_idletasks()
+        self.cv.create_window(right, y + (tab_h - 4 * self.scale) / 2, window=b, anchor="e", tags="panel")
+        return right - b.winfo_reqwidth() - 14 * self.scale
+
+    def _draw_bot_check(self, i, x, y, w, h, right, mid):
+        cv, s = self.cv, self.scale
+        name = self.specs[i]["name"]
         got = self.check_reports.get(name)
         if got:
             stale = got.get("code") and got["code"] != harness.code_hash(self.specs[i])
-            cv.create_text(x + w, y + tab_h / 2, anchor="e", font=self.f_card_detail, tags="panel",
+            cv.create_text(right, mid, anchor="e", font=self.f_card_detail, tags="panel",
                            fill=WARN if stale else FAINT,
-                           text=(f"changed since the check at {got['at']}: Check again" if stale
+                           text=(f"changed since the check at {got['at']}: check again" if stale
                                  else f"checked at {got['at']}"))
-        by, bh = y + tab_h, h - tab_h
-        if self.bot_tab == "results" and self.tour:
-            self._draw_details(x, by, w, bh)
-            trouble = self._tournament_trouble(i)
-            if trouble:
-                cv.create_text(x + w - 24 * s, by + 18 * s, anchor="ne", fill=DOWN, font=self.f_card_detail,
-                               text=trouble, tags="panel")
-            return
-        cv.create_rectangle(x, by, x + w, by + bh, fill=PANEL, outline=LINE, tags="panel")
+        cv.create_rectangle(x, y, x + w, y + h, fill=PANEL, outline=LINE, tags="panel")
         if not got:
-            cv.create_text(x + 28 * s, by + 28 * s, anchor="nw", fill=DIM, font=self.f_card_label,
+            cv.create_text(x + 28 * s, y + 28 * s, anchor="nw", fill=DIM, font=self.f_card_label,
                            width=w - 56 * s, tags="panel",
-                           text=f"{name} hasn't been checked yet. Click Check to try it against the "
-                                "sparring partners.")
+                           text=f"{name} hasn't been checked yet. Check tries it against the sparring "
+                                "partners and tells you what, if anything, is wrong with it.")
             return
         card = {"kind": "check", "name": name, "state": "done", "report": got.get("report"),
                 "build_error": got.get("build_error")}
         self._card_tag = "panel"
         try:
-            self._draw_check_card(x, by, w, bh, s, card=card)
+            self._draw_check_card(x, y, w, h, s, card=card)
+        finally:
+            self._card_tag = "card"
+
+    def _draw_all_checks(self, x, y, w, h):
+        cv, s = self.cv, self.scale
+        cv.create_rectangle(x, y, x + w, y + h, fill=PANEL, outline=LINE, tags="panel")
+        if not self.last_summary:
+            cv.create_text(x + 28 * s, y + 28 * s, anchor="nw", fill=DIM, font=self.f_card_label,
+                           width=w - 56 * s, tags="panel",
+                           text="Check all tries every bot you added against the sparring partners. "
+                                "Pick a bot on the board to check just that one.")
+            return
+        self._card_tag = "panel"
+        try:
+            self._draw_summary_card(x, y, w, h, s, card=self.last_summary)
         finally:
             self._card_tag = "card"
 
     def _pick_tab(self, key):
-        self.bot_tab = key
+        self.side_tab = key
+        if key != "matches":
+            self.viewing = None
         self.layout()
 
     def _tournament_trouble(self, i):
@@ -587,7 +629,8 @@ class Arena(BaseApp):
 
     def _draw_match_list(self, x, y, w, h):
         cv, s = self.cv, self.scale
-        tx, ty = self._panel(x, y, w, h, "MATCHES")
+        picked = [self.display_name(k) for k in self.selected]
+        tx, ty = self._panel(x, y, w, h, "MATCHES" + (": " + " v ".join(picked) if picked else ""))
         if not self.explorer_rows:
             cv.create_text(tx, ty, text="Run or open a tournament first.", anchor="nw", fill=FAINT,
                            font=self.f_card_label, tags="panel")
@@ -623,24 +666,22 @@ class Arena(BaseApp):
 
     def show_badges(self):
         """Check results on the board until there are scores to show there."""
-        return self.view == "bots" and not self.show_scores()
+        return not self.show_scores()
 
     def show_scores(self):
         return bool(self.tour) or self.state in ("running", "paused")
 
     def _draw_overlays(self):
-        if self.view == "bots":
-            self._draw_card()
+        self._draw_card()
 
     def click_row(self, i):
         super().click_row(i)
         if self.card and self.card.get("state") == "done":
             self.card = None        # the picked bot's panel, not an old check result
-        picked = self._report_bot()
-        if picked is not None:
-            self.bot_tab = self._default_tab(picked)
-        if self.view == "bots":
-            self.layout()
+        self.viewing, self.explorer_top = None, 0
+        self.stages[0].match = None
+        self.side_tab = self._default_tab()
+        self.layout()
 
     def _log_breakdown(self, i):
         pass  # the standings view shows this properly
@@ -674,9 +715,10 @@ class Arena(BaseApp):
     def _finished(self, ranks, stats):
         super()._finished(ranks, stats)
         self._compare_with_kept()
+        self.side_tab, self.viewing = "results", None   # a finished run opens on its results
         if self.run_info.get("out"):
             self._append_log(f"Saved to {self.run_info['out']}", UP)
-        self.show_view("bots")
+        self.layout()
 
     def _advance(self, dt):
         """No live replays while running: results just go onto the standings."""
@@ -686,7 +728,7 @@ class Arena(BaseApp):
             if self.final_stats and self.applied >= self.played:
                 self.finish()
             now = time.perf_counter()
-            if self.view == "bots" and now - self._panel_at > 0.5:
+            if now - self._panel_at > 0.5:
                 self._panel_at = now          # keep the run panel's counters moving
                 self.layout()
         for st in self.stages:
@@ -711,7 +753,7 @@ class Arena(BaseApp):
                 self.file_var.set(harness.TournamentFile.next_free(base))
                 self.log(f"Saving to {self.file_var.get()}", DIM)
             self.run_started = time.perf_counter()
-            self.show_view("bots")
+            self.layout()
         super().run_or_stop()
 
 
