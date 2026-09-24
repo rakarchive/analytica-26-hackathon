@@ -75,7 +75,7 @@ class Arena(BaseApp):
                 self.panel_buttons["check"]: "Play the picked bot against the sparring partners and "
                                              "report anything wrong with it.",
                 self.panel_buttons["checkall"]: "Check every bot you added.",
-                self.panel_buttons["back"]: "Back to the list of matches."}
+                self.panel_buttons["back"]: "Close the match and bring the log back."}
         for widget, text in tips.items():
             self.tip.attach(widget, text)
         self.log_sb = ThinScrollbar(self.cv, lambda f: self.logbox.yview_moveto(f))
@@ -128,7 +128,7 @@ class Arena(BaseApp):
         # Buttons that sit in the panel's tabs, placed there at each layout.
         self.panel_buttons = {"check": FlatButton(self.cv, "Check", self.check),
                               "checkall": FlatButton(self.cv, "Check all", self.check_all),
-                              "back": FlatButton(self.cv, "‹ All matches", self.close_match)}
+                              "back": FlatButton(self.cv, "Close match", self.close_match)}
 
         # Run and Advanced sit in the header, beside the match and bot counts
         # (see _header_right); Advanced's settings open under the header.
@@ -279,16 +279,16 @@ class Arena(BaseApp):
         self.explorer_rows = ms
 
     def _wheel(self, event, direction=None):
-        if self.side_tab != "matches" or self.viewing or not self.explorer_rows:
+        if self.side_tab != "matches" or not self.explorer_rows:
             return
         step = direction if direction is not None else (1 if event.delta > 0 else -1)
         self.explorer_top = max(0, self.explorer_top - step * 3)
         self.layout()
 
     def open_match(self, m):
-        """Show one match in the Matches tab, all of it at once."""
+        """Show one match, all of it at once, where the log usually is."""
         self.viewing = m
-        self.layout()               # lays the viewer out in the tab
+        self.layout()               # lays the viewer out in the log's place
         self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
                              title=f"repetition {m['r'] + 1}")   # the names are already on show
         self.stages[0].reveal()
@@ -326,10 +326,14 @@ class Arena(BaseApp):
         self.cv.create_window(left + add.winfo_reqwidth() + gap, H - m, window=keep, anchor="sw")
         self._refresh_buttons()     # the help line and what can be pressed follow the layout
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
-        panel_h = avail * 0.64
+        # A match being looked at takes the log's place, and more of the column.
+        match_open = bool(self.viewing) and self.side_tab == "matches" and self.state != "running"
+        panel_h = avail * (0.42 if match_open else 0.64)
         self.card_box = (rx, top, rw, panel_h)
         self.log_box = (rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2)
-        self._place_log(True)
+        self._place_log(not match_open)
+        if match_open:
+            self.stages[0].layout(*self.log_box)
         self._layout_board()
         if self.card:
             return                  # a check under way: drawn over this spot (_draw_overlays)
@@ -455,10 +459,8 @@ class Arena(BaseApp):
         else:
             if self.viewing:
                 self._place_panel_button("back", right, y, tab_h)
-                self.stages[0].layout(x, by, w, bh)
-            else:
-                self._build_explorer_rows()
-                self._draw_match_list(x, by, w, bh)
+            self._build_explorer_rows()
+            self._draw_match_list(x, by, w, bh)
 
     def _place_panel_button(self, key, right, y, tab_h):
         """Put one of the panel's buttons at the right end of the tab strip;
@@ -714,8 +716,11 @@ class Arena(BaseApp):
             kind = game.verdict(a, b)[0][0]
             yy = ty + k * rh
             tag = f"match{idx}"
+            is_open = mt is self.viewing
             cv.create_rectangle(x + 12 * s, yy, x + w - 20 * s, yy + rh - 3 * s,
-                                fill=PANEL2 if k % 2 else PANEL, width=0, tags=("panel", tag))
+                                fill="#2a3a5c" if is_open else PANEL2 if k % 2 else PANEL,
+                                outline=ACCENT if is_open else "", width=1 if is_open else 0,
+                                tags=("panel", tag))
             cv.create_text(tx, yy + rh / 2, anchor="w", fill=FG, font=f, tags=("panel", tag),
                            text=f"{self.display_name(mt['i'])} v {self.display_name(mt['j'])}")
             cv.create_text(x + w - 30 * s, yy + rh / 2, anchor="e", font=f, tags=("panel", tag),
@@ -723,7 +728,8 @@ class Arena(BaseApp):
                                harness.GAME.kind_colour.get(kind, "dim"), DIM),
                            text=f"{a:.2f} – {b:.2f}   {kind}")
             cv.tag_bind(tag, "<Button-1>", lambda e, mm=mt: self.open_match(mm))
-            self._tag_tip(tag, f"Repetition {mt['r'] + 1}: click to see it round by round.")
+            self._tag_tip(tag, "The match shown below." if mt is self.viewing else
+                          f"Repetition {mt['r'] + 1}: click to see it round by round, below.")
         shown = min(len(self.explorer_rows), self.explorer_top + fit)
         cv.create_text(x + w / 2, y + h - 18 * s, anchor="s", fill=FAINT, font=self.f_card_detail,
                        tags="panel", text=f"{self.explorer_top + 1}–{shown} of "
