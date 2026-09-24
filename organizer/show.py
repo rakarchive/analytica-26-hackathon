@@ -235,7 +235,8 @@ class Show(BaseApp):
                 self.hl_idx += 1
                 self.hl_title = pick["title"]
                 m = pick["match"]
-                self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])),
+                self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"]),
+                                      *harness.match_rounds(m), m.get("end")),
                                      pinned=True,
                                      title=f"{self.hl_idx} of {len(self.highlights)} · {pick['title']}",
                                      labels=(self.notes.get(self.tour.names[m["i"]]),
@@ -266,7 +267,8 @@ class Show(BaseApp):
             self.budget -= k
             for _ in range(k):
                 m = self.queue.pop(0)
-                self.apply((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])))
+                self.apply((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"]),
+                            *harness.match_rounds(m), m.get("end")))
             if not self.queue:
                 self.finish_show()
             elif time.perf_counter() - self._panel_at > 0.2:

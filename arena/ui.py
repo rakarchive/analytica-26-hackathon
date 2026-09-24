@@ -168,6 +168,12 @@ def detect(path):
     return None, [os.path.abspath(path)]
 
 
+def logs_folder(tournament_path):
+    """Where a tournament's bots' stderr goes: its own folder beside the file,
+    so the logs of one run never mix with another's."""
+    return os.path.splitext(tournament_path)[0] + "-logs"
+
+
 def user_bot_spec(path, name):
     build, run = detect(path)
     return {"name": name, "kind": "team", "cmd": run, "cwd": os.path.dirname(os.path.abspath(path)),
@@ -216,10 +222,10 @@ class Engine(threading.Thread):
         self.skip, self.checkpoint = skip, checkpoint
         self.stop = threading.Event()
 
-    def _on_match(self, i, j, pa, pb, n, moves, rep):
+    def _on_match(self, i, j, pa, pb, n, moves, rep, na, nb, ended):
         if self.checkpoint:
-            self.checkpoint.add(i, j, rep, pa, pb, n, moves)  # saved before it is shown
-        self.q.put(("match", (i, j, pa, pb, n, moves, rep)))
+            self.checkpoint.add(i, j, rep, pa, pb, n, moves, na, nb, ended)  # saved before it is shown
+        self.q.put(("match", (i, j, pa, pb, n, moves, na, nb, ended, rep)))
 
     def run(self):
         try:
@@ -379,6 +385,8 @@ class Stage:
         cv, n = self.cv, self.match[4]
         k = max(1, self.drawn)
         a, b = self.run_a / k, self.run_b / k
+        if self.drawn >= n:
+            a, b = self.final_scores()         # a side that failed: over the full length
         cv.itemconfig(self.score_a, text=f"{a:.2f}", fill=FG if a >= b else DIM)
         cv.itemconfig(self.score_b, text=f"{b:.2f}", fill=FG if b >= a else DIM)
         cv.itemconfig(self.round_txt, text=(f"{self.title}  ·  " if self.title else "")
@@ -459,14 +467,30 @@ class Stage:
                 parts.append(f"{name} {past(ch)}")
         return f"Round {t + 1}: " + "  ·  ".join(parts)
 
+    def final_scores(self):
+        """Each side's points per round for the match: over its own rounds
+        figure, if the match carries one (see harness.play_match)."""
+        i, j, pa, pb, n = self.match[:5]
+        na, nb = (self.match[6], self.match[7]) if len(self.match) > 7 else (n, n)
+        return (pa / na if na else 0.0, pb / nb if nb else 0.0)
+
+    def ended_captions(self):
+        """How the match ended early, if it did."""
+        ended = (self.match[8] if len(self.match) > 8 else None) or {}
+        n = self.match[4]
+        return [f"{self.app.display_name(self.match[0 if side == 'a' else 1])} {how} in round {n + 1}: "
+                "the match ended there, and the rest counts as zero for it"
+                for side, how in sorted(ended.items())]
+
     def _draw_verdict(self):
         i, j, pa, pb, n = self.match[:5]
-        a, b = pa / n, pb / n
+        a, b = self.final_scores()
         na, nb = self.app.display_name(i), self.app.display_name(j)
         # Captions for replays someone chose (highlights, Watch); auto-played
         # matches in presentation just get the smaller headline.
         detailed = self.pinned
         captions = self.captions or (match_story(*self.match[5], na, nb)[0] if detailed else [])
+        captions = self.ended_captions() + list(captions)
         s = self.app.scale
         t = (self.tag, self.tag + "dyn")
         cx = self.x + self.w / 2
@@ -705,9 +729,15 @@ class BaseApp:
         self._append_log(text, color)
 
     def _arrive(self, m):
-        i, j, pa, pb, n, moves, rep = m
-        self.matches.append({"i": i, "j": j, "r": rep, "n": n, "pa": pa, "pb": pb,
-                             "a": moves[0], "b": moves[1]})
+        i, j, pa, pb, n, moves, na, nb, ended, rep = m
+        rec = {"i": i, "j": j, "r": rep, "n": n, "pa": pa, "pb": pb, "a": moves[0], "b": moves[1]}
+        if na != n:
+            rec["na"] = na
+        if nb != n:
+            rec["nb"] = nb
+        if ended:
+            rec["end"] = ended
+        self.matches.append(rec)
         self.pending.append(m)
 
     def _advance(self, dt):
@@ -764,8 +794,8 @@ class BaseApp:
             st = stats[i].summary()
             self._append_log(f"{s['name']}: #{ranks[i]} of {len(ranks)}, {self.score(i):.3f} pts/round, "
                              f"latency mean {st['mean_ms']:.2f} ms, max {st['max_ms']:.1f} ms", FG)
-            for k, msg in (("timeouts", "moves over the 50 ms limit (forfeited)"),
-                           ("crashes", "crashes"), ("forfeits", "rounds forfeited while crashed"),
+            for k, msg in (("timeouts", "matches ended by a move over the 50 ms limit"),
+                           ("crashes", "matches ended by a crash"),
                            ("junk_lines", "non-move lines on stdout (print debug to stderr)")):
                 if st[k]:
                     self._append_log(f"  {st[k]} {msg}", DOWN if k != "junk_lines" else WARN)
@@ -854,7 +884,8 @@ class BaseApp:
         self.coop = [0] * n
         self.moves = [0] * n
         self.shown = [0] * n
-        self.forfeit_reported, self.exploit_reported = set(), set()
+        self.ended_reported, self.exploit_reported = set(), set()
+        self.ended_by = {}      # bot -> {"crashed": matches, "too slow": matches}
         self.rank_prev, self.arrows = {}, {}
         self.champion = None
         self.champion_index = None
@@ -1018,6 +1049,8 @@ class BaseApp:
                                        font=self.f_row if team else self.f_row_small, tags=tg)
             r["badge"] = cv.create_text(cols["coop"], ry + rh / 2, anchor="e", fill=FAINT,
                                         font=self.f_badge, tags=tg)
+            r["mark"] = cv.create_text(cols["bar0"] - 10 * s, ry + rh / 2, anchor="e", fill=DOWN,
+                                       font=self.f_badge, tags=tg)
             bh = rh * 0.34
             r["barbg"] = cv.create_rectangle(cols["bar0"], ry + rh / 2 - bh / 2, cols["bar1"],
                                              ry + rh / 2 + bh / 2, fill=PANEL2, width=0, tags=tg)
@@ -1422,7 +1455,8 @@ class BaseApp:
             _, flips = harness.match_plan(seed, 0)
             record = []
             try:
-                pa, pb, n = harness.play_match(players[0], players[1], flips, seed, seed + 1, record)
+                pa, pb, n, na, nb, ended = harness.play_match(players[0], players[1], flips, seed, seed + 1,
+                                                              record)
             finally:
                 for p in players:
                     p.close()
@@ -1430,7 +1464,7 @@ class BaseApp:
                 if p.stats.crashes or p.stats.timeouts:
                     self.log(f"{spec['name']}: {p.stats.timeouts} timeouts, {p.stats.crashes} crashes"
                              + (f" ({p.last_error})" if getattr(p, "last_error", None) else ""), DOWN)
-            self.ui_q.put(("watch", (i, j, pa, pb, n, harness.encode_record(record))))
+            self.ui_q.put(("watch", (i, j, pa, pb, n, harness.encode_record(record), na, nb, ended)))
         self._work(work)
 
     def run_or_stop(self):
@@ -1467,7 +1501,7 @@ class BaseApp:
         self.run_presenting = self.presenting
         self.rps = opts["stage_speed"]
         out = opts["out"]
-        log_dir = os.path.join(os.path.dirname(out), "logs") if out else BOT_LOG_DIR
+        log_dir = logs_folder(out) if out else BOT_LOG_DIR
         os.makedirs(log_dir, exist_ok=True)
         seed = opts["seed"]
 
@@ -1515,22 +1549,27 @@ class BaseApp:
         self.matches = list(records)
         for r in records:
             i, j, pa, pb, n = r["i"], r["j"], r["pa"], r["pb"], r["n"]
-            for me, other, p, c in ((i, j, pa, r.get("ca")), (j, i, pb, r.get("cb"))):
+            na, nb = harness.match_rounds(r)
+            for me, other, p, c, rounds, side in ((i, j, pa, r.get("ca"), na, "a"), (j, i, pb, r.get("cb"), nb, "b")):
                 k = 0 if self.specs[other]["kind"] == "team" else 1
                 self.pts[me][k] += p
-                self.rnds[me][k] += n
+                self.rnds[me][k] += rounds
+                if side in r.get("end", {}):
+                    how = self.ended_by.setdefault(me, {})
+                    how[r["end"][side]] = how.get(r["end"][side], 0) + 1
                 if c is not None:
                     self.coop[me] += c
                     self.moves[me] += n
             self.pair_pts[i][j] += pa
             self.pair_pts[j][i] += pb
-            self.pair_rnds[i][j] += n
-            self.pair_rnds[j][i] += n
+            self.pair_rnds[i][j] += na
+            self.pair_rnds[j][i] += nb
             done.add((i, j, r["r"]))
             shown = self.pair_kinds.setdefault((i, j), [])
-            kind = new_story(shown, pa / n, pb / n)
+            a, b = harness.match_scores(r)
+            kind = new_story(shown, a, b)
             if kind is not None:
-                shown.append((kind, pa / n, pb / n))  # already told; don't replay it
+                shown.append((kind, a, b))  # already told; don't replay it
         self.applied = self.played = len(records)
         return done
 
@@ -1544,25 +1583,33 @@ class BaseApp:
         self.root.destroy()
 
     def apply(self, m):
+        """Fold one match into the standings: (i, j, pa, pb, n, (ma, mb)),
+        optionally followed by each side's rounds and how it ended (see
+        harness.play_match)."""
         i, j, pa, pb, n, (ma, mb) = m[:6]
-        for me, other, p, mv in ((i, j, pa, ma), (j, i, pb, mb)):
+        na, nb = (m[6], m[7]) if len(m) > 7 else (n, n)
+        ended = (m[8] if len(m) > 8 else None) or {}
+        for me, other, p, mv, rounds, side in ((i, j, pa, ma, na, "a"), (j, i, pb, mb, nb, "b")):
             k = 0 if self.specs[other]["kind"] == "team" else 1
             self.pts[me][k] += p
-            self.rnds[me][k] += n
+            self.rnds[me][k] += rounds
+            if side in ended:
+                how = self.ended_by.setdefault(me, {})
+                how[ended[side]] = how.get(ended[side], 0) + 1
             if harness.GAME.stat:
                 counted = harness.GAME.stat[1]
                 self.coop[me] += sum(1 for ch in mv if ch.upper() in counted)
             self.moves[me] += n
-            if "#" in mv and self.specs[me]["kind"] == "team" and me not in self.forfeit_reported:
-                self.forfeit_reported.add(me)
-                self.note(f"{self.display_name(me)} is forfeiting rounds (timeout or crash)", DOWN, toast=True)
+            if side in ended and self.specs[me]["kind"] == "team" and me not in self.ended_reported:
+                self.ended_reported.add(me)
+                self.note(f"{self.display_name(me)} {ended[side]}: its match ended there", DOWN, toast=True)
         self.pair_pts[i][j] += pa
         self.pair_pts[j][i] += pb
-        self.pair_rnds[i][j] += n
-        self.pair_rnds[j][i] += n
+        self.pair_rnds[i][j] += na
+        self.pair_rnds[j][i] += nb
         self.applied += 1
         self.recent.append(m)
-        a, b = pa / n, pb / n
+        a, b = pa / na if na else 0.0, pb / nb if nb else 0.0
         for x, y, sx, sy in ((i, j, a, b), (j, i, b, a)):
             if sx >= 4.0 and sy <= 0.75 and (x, y) not in self.exploit_reported \
                     and self.specs[x]["kind"] == "team":
@@ -1713,6 +1760,7 @@ class BaseApp:
                 "coop": (f"{self.coop[i] / self.moves[i]:.0%}" if scored and self.moves[i] else "", DIM),
                 "name": (self.display_name(i), FG if team else DIM),
                 "badge": badge,
+                "mark": self.bot_mark(i) if scored else ("", DOWN),
             }
             for key, (text, col) in vals.items():
                 if r["cache"].get(key) != (text, col):
@@ -1738,6 +1786,11 @@ class BaseApp:
             if r["cache"].get("bg") != (bg, outline):
                 cv.itemconfig(r["bg"], fill=bg, outline=outline, width=3 if outline else 0)
                 r["cache"]["bg"] = (bg, outline)
+
+    def bot_mark(self, i):
+        """(text, colour) marking a bot on the board once there are scores:
+        the Arena marks those that failed a check or a match."""
+        return "", DOWN
 
     def _header_right(self, W, m, s):
         """Where the header's status text ends; a subclass can put things

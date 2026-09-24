@@ -12,6 +12,7 @@ Right-click a bot on the board to edit its run command or remove it.
 """
 
 import argparse
+import glob
 import multiprocessing
 import os
 import runpy
@@ -30,7 +31,7 @@ import harness  # noqa: E402
 import stats as stat  # noqa: E402
 from ui import *  # noqa: E402,F401,F403
 from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,  # noqa: E402
-                BaseApp, FlatButton, ThinScrollbar, Tooltip, adopt_portable_tools, baseline_specs, default_workers,
+                BaseApp, FlatButton, ThinScrollbar, Tooltip, logs_folder, adopt_portable_tools, baseline_specs, default_workers,
                 user_bot_spec)
 
 # Where tournaments are saved unless Advanced says otherwise: one numbered file
@@ -228,7 +229,8 @@ class Arena(BaseApp):
         self.seed_var.set(str(tour.seed))
         self.matches = tour.matches
         for m in tour.matches:
-            self.apply((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m.get("a", ""), m.get("b", ""))))
+            self.apply((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m.get("a", ""), m.get("b", "")),
+                        *harness.match_rounds(m), m.get("end")))
         self.tour = tour
         self.total = tour.expected()
         self.played = self.applied = len(tour.matches)
@@ -292,7 +294,8 @@ class Arena(BaseApp):
             self._redraw_match_list()   # the viewer is already in place: just mark the new one
         else:
             self._refresh_side()        # lays the viewer out in the log's place
-        self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
+        self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"]),
+                              *harness.match_rounds(m), m.get("end")), pinned=True,
                              title=f"repetition {m['r'] + 1}")   # the names are already on show
         self.stages[0].reveal()
 
@@ -422,7 +425,16 @@ class Arena(BaseApp):
                 status = self.check_status.get(name) if name else None
                 label += {"ok": "  ✓", "warn": "  !", "fail": "  ✗"}.get(status, "")
             out.append((key, label, usable))
+        one = self._report_bot()
+        if one is not None and self._has_logs(one):
+            out.insert(2, ("logs", "Logs", True))
         return out
+
+    def _has_logs(self, i):
+        """A bot whose check failed or warned, or that failed a match, has a
+        Logs tab: what it printed to stderr then."""
+        return (self.check_status.get(self.specs[i]["name"]) in ("fail", "warn")
+                or bool(self.ended_by.get(i)) or bool(self._tournament_trouble(i)))
 
     def _default_tab(self):
         """Where the panel opens after the pick changes: a bot that failed or
@@ -500,6 +512,8 @@ class Arena(BaseApp):
                                              f"{folder}." if folder else "")
             else:
                 self._draw_stats(x, by, w, bh)
+        elif self.side_tab == "logs":
+            self._draw_logs(self.selected[0], x, by, w, bh)
         elif self.side_tab == "check":
             key = "check" if self.selected else "checkall"
             right = self._place_panel_button(key, right, y, tab_h)
@@ -520,6 +534,63 @@ class Arena(BaseApp):
         b.update_idletasks()
         self.cv.create_window(right, y + (tab_h - 4 * self.scale) / 2, window=b, anchor="e", tags="panel")
         return right - b.winfo_reqwidth() - 14 * self.scale
+
+    def _draw_logs(self, i, x, y, w, h):
+        """What the bot printed to stderr in its check and in the tournament,
+        in a scrollable monospace view."""
+        cv, s = self.cv, self.scale
+        if not hasattr(self, "logs_text"):
+            self.logs_text = tk.Text(self.cv, bg=PANEL, fg=FG, relief="flat", wrap="none",
+                                     highlightthickness=1, highlightbackground=LINE, padx=14, pady=10,
+                                     insertbackground=FG, cursor="arrow")
+            self.logs_text.bind("<Key>", lambda e: "break" if e.keysym not in ("c", "C") else None)
+            self.logs_sb = ThinScrollbar(self.cv, lambda f: self.logs_text.yview_moveto(f))
+            self.logs_text.config(yscrollcommand=self.logs_sb.set)
+            self._logs_key = None
+        text, sw = self.logs_text, 10 * s
+        text.config(font=self.logbox.cget("font"))
+        for colour in (FG, DIM, FAINT, DOWN, WARN):
+            text.tag_configure(colour, foreground=colour)
+        cv.create_window(x, y, window=text, anchor="nw", width=w - sw, height=h, tags="panel")
+        cv.create_window(x + w, y, window=self.logs_sb, anchor="ne", width=sw, height=h, tags="panel")
+        sections = self._log_sections(i)
+        key = (self.specs[i]["name"], tuple((head, len(body)) for head, _, body in sections))
+        if key != self._logs_key:            # refill only on change, so scrolling sticks
+            self._logs_key = key
+            text.delete("1.0", "end")
+            for head, colour, body in sections:
+                text.insert("end", head + "\n", colour)
+                text.insert("end", (body.rstrip("\n") or "(nothing)") + "\n\n", FG if body else FAINT)
+
+    def _log_sections(self, i):
+        """[(heading, colour, text)]: the check's stderr, then the tournament's."""
+        name, out = self.specs[i]["name"], []
+        got = self.check_reports.get(name)
+        if got:
+            if got.get("build_error") is not None:
+                out.append((f"BUILD FAILED  ·  checked at {got['at']}", DOWN, got["build_error"]))
+            else:
+                rep = got["report"]
+                head = {"ok": "PROTOCOL CHECK: PASSED", "warn": "PROTOCOL CHECK: WARNINGS",
+                        "fail": "PROTOCOL CHECK: FAILED"}[rep.worst]
+                out.append((f"{head}  ·  checked at {got['at']}  ·  its stderr",
+                            {"ok": DIM, "warn": WARN, "fail": DOWN}[rep.worst], rep.stderr_text))
+        folder = self.run_info.get("log_dir") or (logs_folder(self.tour.path) if self.tour and self.tour.path
+                                                  else None)
+        if self.tour or self.state == "running":
+            trouble = self._tournament_trouble(i)
+            body = ""
+            if folder and os.path.isdir(folder):
+                for path in sorted(glob.glob(os.path.join(glob.escape(folder), glob.escape(name) + ".w*.log"))):
+                    try:
+                        with open(path, "rb") as f:
+                            f.seek(max(0, os.path.getsize(path) - 100_000))
+                            body += f.read().decode("utf-8", "replace")
+                    except OSError:
+                        pass
+            out.append(("TOURNAMENT" + (f"  ·  {trouble}" if trouble else "") + "  ·  its stderr",
+                        DOWN if trouble else DIM, body))
+        return out
 
     def _draw_bot_check(self, i, x, y, w, h, right, mid):
         cv, s = self.cv, self.scale
@@ -570,6 +641,8 @@ class Arena(BaseApp):
                     1: f"{picked[0] if picked else ''}'s record against each opponent.",
                     2: "Whether one of the two really scores more, judged on the same opponents "
                        "with the same noise."}[min(2, len(picked))]
+        if key == "logs":
+            return f"What {picked[0]} printed to stderr in its check and in the tournament."
         if key == "check":
             return (f"{picked[0]}'s last protocol check, and a button to check it again." if picked
                     else "Check every bot you added, and see how they all did.")
@@ -598,9 +671,10 @@ class Arena(BaseApp):
             st = got[i].summary() if i in got and got[i].loaded else None
         if not st:
             return ""
-        bits = [f"{st[k]:,} {label}" for k, label in (("timeouts", "timeouts"), ("crashes", "crashes"),
-                                                      ("forfeits", "forfeited rounds"),
-                                                      ("junk_lines", "stray stdout lines")) if st.get(k)]
+        bits = [label.format(n=f"{st[k]:,}", s="" if st[k] == 1 else "es")
+                for k, label in (("crashes", "crashed in {n} match{s}"),
+                                 ("timeouts", "too slow in {n} match{s}"),
+                                 ("junk_lines", "{n} stray stdout lines")) if st.get(k)]
         return ", ".join(bits)
 
     def _layout_board(self):
@@ -615,11 +689,32 @@ class Arena(BaseApp):
             self.cv.tag_bind(tag, "<Enter>", lambda e, i=i: self.tip._later(e, lambda: self._row_tip(i)), add="+")
             self.cv.tag_bind(tag, "<Leave>", lambda e: self.tip.hide(), add="+")
 
+    def bot_mark(self, i):
+        """Mark a bot that failed its check, or crashed or was too slow in
+        the tournament."""
+        if self.specs[i]["kind"] != "team":
+            return "", DOWN
+        how = self.ended_by.get(i, {})
+        if how.get("crashed"):              # what happened in the tournament comes first
+            return "✗ crashed", DOWN
+        if how.get("too slow"):
+            return "✗ too slow", DOWN
+        if how.get("couldn't start"):
+            return "✗ couldn't start", DOWN
+        if self.check_status.get(self.specs[i]["name"]) == "fail":
+            return "✗ check failed", DOWN
+        return "", DOWN
+
     def _row_tip(self, i):
         name = self.display_name(i)
         if i in self.selected:
             return f"Click to let {name} go."
         more = " Right-click for more." if self.specs[i]["kind"] == "team" else ""
+        why = {"✗ check failed": "failed its check", "✗ crashed": "crashed in the tournament",
+               "✗ too slow": "was too slow in the tournament",
+               "✗ couldn't start": "couldn't start in the tournament"}.get(self.bot_mark(i)[0])
+        if why:
+            more = f" It {why}: its Logs tab shows what it printed." + more
         if len(self.selected) == 1:
             return f"Click to compare {name} with {self.display_name(self.selected[0])}.{more}"
         return f"Click to pick {name}: its results, its check and its matches.{more}"
@@ -773,7 +868,7 @@ class Arena(BaseApp):
             if idx >= len(self.explorer_rows):
                 break
             mt = self.explorer_rows[idx]
-            a, b = mt["pa"] / mt["n"], mt["pb"] / mt["n"]
+            a, b = harness.match_scores(mt)
             kind = game.verdict(a, b)[0][0]
             yy = ty + k * rh
             tag = f"match{idx}"

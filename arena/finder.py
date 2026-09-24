@@ -34,7 +34,7 @@ def find_highlights(tour, count=10, champion=None):
         matches often tell the same story, because every repetition uses the
         same noise draws, so two pairings that both fall into the same rut
         play out identically."""
-        return (game.verdict(m["pa"] / m["n"], m["pb"] / m["n"])[0],
+        return (game.verdict(*harness.match_scores(m))[0],
                 tuple(game.match_story(m["a"], m["b"], "one", "other")[0]))
 
     def take(title, m):
@@ -74,7 +74,7 @@ def find_highlights(tour, count=10, champion=None):
         mine = []
         for m in duels:
             if champion in (m["i"], m["j"]):
-                mine.append((m["pa"] / m["n"] if m["i"] == champion else m["pb"] / m["n"], m))
+                mine.append((harness.match_scores(m)[0 if m["i"] == champion else 1], m))
         for _, m in sorted(mine, key=lambda x: x[0]):
             if (m["i"], m["j"]) in used_pairs:
                 continue  # that pairing has already been shown
@@ -88,6 +88,6 @@ def describe(tour, pick):
     """(headline, caption lines) for a pick, using the bots' names."""
     m = pick["match"]
     na, nb = tour.names[m["i"]], tour.names[m["j"]]
-    a, b = m["pa"] / m["n"], m["pb"] / m["n"]
+    a, b = harness.match_scores(m)
     captions, _ = game.match_story(m["a"], m["b"], na, nb)
     return game.headline(a, b, na, nb), captions

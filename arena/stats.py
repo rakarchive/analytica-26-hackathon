@@ -10,6 +10,8 @@ noise (both met the same opponents under the same noise draws).
 import math
 import statistics
 
+import harness
+
 
 def z(confidence):
     return statistics.NormalDist().inv_cdf(0.5 + confidence / 2)
@@ -32,9 +34,9 @@ def match_scores(tour, i, opponent=None):
     out = []
     for m in tour.matches:
         if m["i"] == i and (opponent is None or m["j"] == opponent):
-            out.append(m["pa"] / m["n"])
+            out.append(harness.match_scores(m)[0])
         elif m["j"] == i and (opponent is None or m["i"] == opponent):
-            out.append(m["pb"] / m["n"])
+            out.append(harness.match_scores(m)[1])
     return out
 
 
@@ -52,9 +54,9 @@ def paired_differences(tour, i, j):
         out = {}
         for m in tour.matches:
             if m["i"] == me and m["j"] not in (i, j):
-                out[m["j"], m["r"]] = m["pa"] / m["n"]
+                out[m["j"], m["r"]] = harness.match_scores(m)[0]
             elif m["j"] == me and m["i"] not in (i, j):
-                out[m["i"], m["r"]] = m["pb"] / m["n"]
+                out[m["i"], m["r"]] = harness.match_scores(m)[1]
         return out
     a, b = table(i), table(j)
     return [a[k] - b[k] for k in sorted(a.keys() & b.keys())]
@@ -65,11 +67,11 @@ def head_to_head(tour, i, j):
     mine, theirs = [], []
     for m in tour.matches:
         if m["i"] == i and m["j"] == j:
-            mine.append(m["pa"] / m["n"])
-            theirs.append(m["pb"] / m["n"])
+            mine.append(harness.match_scores(m)[0])
+            theirs.append(harness.match_scores(m)[1])
         elif m["i"] == j and m["j"] == i:
-            mine.append(m["pb"] / m["n"])
-            theirs.append(m["pa"] / m["n"])
+            mine.append(harness.match_scores(m)[1])
+            theirs.append(harness.match_scores(m)[0])
     return mine, theirs
 
 
