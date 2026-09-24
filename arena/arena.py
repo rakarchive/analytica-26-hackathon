@@ -646,7 +646,7 @@ class Arena(BaseApp):
         cv.create_text(tx, ty, text=head, anchor="nw", fill=FG, font=self.f_stage_name, tags="panel")
         if self.tour and self.tour.path:
             cv.create_text(tx, ty + 44 * s, text=self.tour.path, anchor="nw", fill=DIM,
-                           font=self.f_card_detail, tags="panel")
+                           font=self.f_card_detail, tags="panel", width=w - 48 * s)
         trouble = []
         got = self.tour.stats_objects() if self.tour else {}
         for i, sp in enumerate(self.specs):
