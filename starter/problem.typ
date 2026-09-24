@@ -140,7 +140,7 @@ These are the rules on the day too.
   is restarted for the next one. One that fails to start three times in a row
   is out.
 + *One source file: Python, Java, C or C++*, standard library only. We
-  compile your bot exactly as the Arena does (see `README.md`). In Java, the
+  compile your bot exactly as the Arena does. In Java, the
   file's public class must share its name, and any other classes go inside the
   same file.
 + *No network, no files, no other processes.* Your bot talks to the

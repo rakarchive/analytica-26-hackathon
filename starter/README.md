@@ -47,12 +47,12 @@ its own history rather than assume it.
 
 The `templates` folder has a working bot in each language:
 
-| Language | Template | Built with |
-|---|---|---|
-| Python | `python/my_bot.py` | nothing to build |
-| Java | `java/MyBot.java` | `javac MyBot.java` |
-| C | `c/my_bot.c` | `gcc -O2 -o my_bot my_bot.c -lm` |
-| C++ | `cpp/my_bot.cpp` | `g++ -O2 -std=c++17 -o my_bot my_bot.cpp` |
+| Language | Template |
+|---|---|
+| Python | `python/my_bot.py` |
+| Java | `java/MyBot.java` |
+| C | `c/my_bot.c` |
+| C++ | `cpp/my_bot.cpp` |
 
 Each one is short, handles the protocol, and plays rock first, then whatever
 beats the opponent's last move. Copy the one for your language and rewrite
@@ -93,11 +93,7 @@ pairing plays, the seed, and where the tournament file is saved.
 Anything your bot prints to stderr is saved to a log file; the Arena says where
 after each run.
 
-The Arena runs your bot the same way the tournament does, so your bot needs
-its language's tools installed:
-
-- **Python:** nothing to install, but Python 3 from python.org also works.
-- **Java:** a JDK, with `java` and `javac` on your PATH.
-- **C and C++:** `gcc` and `g++` on your PATH (MinGW-w64 on Windows).
-
-If you are using the flash-drive kit, all of these come with it.
+Run the Arena from the flash-drive kit: it brings Python, Java, C and C++
+with it, so there is nothing to install and nothing to compile by hand. Add
+your source file and the Arena builds and runs it the same way the tournament
+does.
