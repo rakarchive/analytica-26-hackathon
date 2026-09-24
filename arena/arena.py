@@ -283,12 +283,16 @@ class Arena(BaseApp):
             return
         step = direction if direction is not None else (1 if event.delta > 0 else -1)
         self.explorer_top = max(0, self.explorer_top - step * 3)
-        self.layout()
+        self._redraw_match_list()
 
     def open_match(self, m):
         """Show one match, all of it at once, where the log usually is."""
+        already = bool(self.viewing)
         self.viewing = m
-        self.layout()               # lays the viewer out in the log's place
+        if already:
+            self._redraw_match_list()   # the viewer is already in place: just mark the new one
+        else:
+            self.layout()               # lays the viewer out in the log's place
         self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
                              title=f"repetition {m['r'] + 1}")   # the names are already on show
         self.stages[0].reveal()
@@ -572,11 +576,11 @@ class Arena(BaseApp):
 
     # ---------------- panels ----------------
 
-    def _panel(self, x, y, w, h, title):
+    def _panel(self, x, y, w, h, title, tags=("panel",)):
         cv, s = self.cv, self.scale
-        cv.create_rectangle(x, y, x + w, y + h, fill=PANEL, outline=LINE, tags="panel")
+        cv.create_rectangle(x, y, x + w, y + h, fill=PANEL, outline=LINE, tags=tags)
         cv.create_text(x + 24 * s, y + 18 * s, text=title, anchor="nw", fill=FAINT, font=self.f_head,
-                       tags="panel")
+                       tags=tags)
         return x + 24 * s, y + 54 * s
 
     def _draw_run_panel(self, x, y, w, h):
@@ -696,12 +700,18 @@ class Arena(BaseApp):
             yy = cv.bbox(item)[3] + 8 * s
 
     def _draw_match_list(self, x, y, w, h):
+        """The list of matches, drawn under the "mlist" tag so that scrolling
+        can redraw it alone (see _redraw_match_list): redrawing the whole
+        window would take down and put back the log and the buttons, which
+        flickers."""
         cv, s = self.cv, self.scale
+        self._list_geom = (x, y, w, h)
         picked = [self.display_name(k) for k in self.selected]
-        tx, ty = self._panel(x, y, w, h, "MATCHES" + (": " + " v ".join(picked) if picked else ""))
+        tx, ty = self._panel(x, y, w, h, "MATCHES" + (": " + " v ".join(picked) if picked else ""),
+                             tags=("panel", "mlist"))
         if not self.explorer_rows:
             cv.create_text(tx, ty, text="Run or open a tournament first.", anchor="nw", fill=FAINT,
-                           font=self.f_card_label, tags="panel")
+                           font=self.f_card_label, tags=("panel", "mlist"))
             return
         rh = 30 * s
         fit = max(1, int((h - 80 * s) / rh))
@@ -720,10 +730,10 @@ class Arena(BaseApp):
             cv.create_rectangle(x + 12 * s, yy, x + w - 20 * s, yy + rh - 3 * s,
                                 fill="#2a3a5c" if is_open else PANEL2 if k % 2 else PANEL,
                                 outline=ACCENT if is_open else "", width=1 if is_open else 0,
-                                tags=("panel", tag))
-            cv.create_text(tx, yy + rh / 2, anchor="w", fill=FG, font=f, tags=("panel", tag),
+                                tags=("panel", "mlist", tag))
+            cv.create_text(tx, yy + rh / 2, anchor="w", fill=FG, font=f, tags=("panel", "mlist", tag),
                            text=f"{self.display_name(mt['i'])} v {self.display_name(mt['j'])}")
-            cv.create_text(x + w - 30 * s, yy + rh / 2, anchor="e", font=f, tags=("panel", tag),
+            cv.create_text(x + w - 30 * s, yy + rh / 2, anchor="e", font=f, tags=("panel", "mlist", tag),
                            fill={"up": UP, "down": DOWN, "warn": WARN}.get(
                                harness.GAME.kind_colour.get(kind, "dim"), DIM),
                            text=f"{a:.2f} – {b:.2f}   {kind}")
@@ -732,19 +742,30 @@ class Arena(BaseApp):
                           f"Repetition {mt['r'] + 1}: click to see it round by round, below.")
         shown = min(len(self.explorer_rows), self.explorer_top + fit)
         cv.create_text(x + w / 2, y + h - 18 * s, anchor="s", fill=FAINT, font=self.f_card_detail,
-                       tags="panel", text=f"{self.explorer_top + 1}–{shown} of "
+                       tags=("panel", "mlist"), text=f"{self.explorer_top + 1}–{shown} of "
                                           f"{len(self.explorer_rows):,}")
         total = len(self.explorer_rows)
         self.list_fit = fit
         if total > fit:
             sw = 10 * s
-            cv.create_window(x + w - 4 * s, ty, window=self.list_sb, anchor="ne", width=sw,
-                             height=fit * rh, tags="panel")
+            if not cv.find_withtag("mlist_sb"):     # kept across list redraws, so it doesn't blink
+                cv.create_window(x + w - 4 * s, ty, window=self.list_sb, anchor="ne", width=sw,
+                                 height=fit * rh, tags=("panel", "mlist_sb"))
             self.list_sb.set(self.explorer_top / total, (self.explorer_top + fit) / total)
+        else:
+            cv.delete("mlist_sb")
 
     def _scroll_matches(self, first):
         self.explorer_top = int(round(first * len(self.explorer_rows)))
-        self.layout()
+        self._redraw_match_list()
+
+    def _redraw_match_list(self):
+        if not self.cv.find_withtag("mlist"):
+            self.layout()
+            return
+        self.tip.hide()
+        self.cv.delete("mlist")
+        self._draw_match_list(*self._list_geom)
 
     # ---------------- hooks ----------------
 
@@ -813,8 +834,9 @@ class Arena(BaseApp):
                 self.finish()
             now = time.perf_counter()
             if now - self._panel_at > 0.5:
-                self._panel_at = now          # keep the run panel's counters moving
-                self.layout()
+                self._panel_at = now          # keep the run panel's counters moving:
+                self.cv.delete("panel")       # it is all the panel shows while running, and
+                self._draw_run_panel(*self.card_box)   # redrawing it alone doesn't flicker
         for st in self.stages:
             st.step(dt, self.rps)
 
