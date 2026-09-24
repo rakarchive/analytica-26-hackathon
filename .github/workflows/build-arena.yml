@@ -1,10 +1,11 @@
 name: Build Arena
 
 # Builds arena/ into a single Windows exe, checks that the packaged build can
-# actually run a tournament, and publishes the participants' download:
-# Arena.exe plus the starter pack (README and bot templates in Python, Java,
-# C and C++). Runs only when a GitHub release is published, and attaches
-# Arena.zip to that release.
+# actually run a tournament, and publishes the participants' downloads:
+# Arena.zip, Arena.exe plus the starter pack (README and bot templates in
+# Python, Java, C and C++), and Arena-Kit.zip, the flash-drive kit: the same
+# with Python, a JDK and MinGW gcc/g++ alongside, so nothing needs installing.
+# Runs only when a GitHub release is published, and attaches both to it.
 #
 # The game is whichever one the release's branch plays (arena/rules.py): the
 # ipd branch for the event, the rps branch for the practice pack.
@@ -19,7 +20,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 30  # a hung step must not run for hours
+    timeout-minutes: 50  # a hung step must not run for hours; the kit's downloads take a while
     defaults:
       run:
         shell: pwsh
@@ -137,13 +138,58 @@ jobs:
           Copy-Item -Recurse ..\starter\templates package\templates
           Compress-Archive -Path package\* -DestinationPath Arena.zip -Force
 
+      - name: Build the flash-drive kit
+        # make-kit.ps1 downloads the toolchains, assembles the kit around the
+        # Arena.exe just built and tested, and checks the result: every
+        # template built and played with the bundled tools, and the Arena's
+        # self-test. The download hashes it records are printed, to pin in
+        # kit/hashes.json.
+        working-directory: .
+        timeout-minutes: 25
+        run: |
+          & ./kit/make-kit.ps1 -Arena arena\dist\Arena.exe -Out Arena-Kit -TrimJdk
+          Write-Host "download hashes:"
+          Get-Content kit\hashes.json
+
+      - name: A practice kit must not give the real game away either
+        # The kit adds text of its own (README.txt, Shell here.cmd) to the
+        # starter pack; the toolchains are the stock downloads.
+        if: steps.game.outputs.key != 'ipd'
+        working-directory: .
+        run: |
+          $words = "prisoner", "cooperat", "defect", "tit.for.tat", "titfortat", "pavlov", "grudge", "\bipd\b"
+          $files = @(Get-ChildItem Arena-Kit -File | Where-Object { $_.Extension -in ".txt", ".md", ".cmd" }) +
+                   @(Get-ChildItem Arena-Kit\templates -Recurse -File)
+          $leaks = foreach ($f in $files) {
+            foreach ($w in $words) {
+              Select-String -Path $f.FullName -Pattern $w | ForEach-Object { "$($f.Name):$($_.LineNumber): $w" }
+            }
+          }
+          if ($leaks) { $leaks | Write-Host; throw "the practice kit names the real game" }
+          Write-Host "nothing in the practice kit names the real game"
+
+      - name: Zip the kit
+        working-directory: .
+        run: |
+          7z a -tzip -mx=5 Arena-Kit.zip .\Arena-Kit\* | Out-Null
+          if ($LASTEXITCODE) { throw "7z failed" }
+          "Arena-Kit.zip: {0:N0} MB" -f ((Get-Item Arena-Kit.zip).Length / 1MB)
+
       - uses: actions/upload-artifact@v4
         with:
           name: Arena-${{ steps.game.outputs.key }}
           path: arena/package/
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Arena-Kit-${{ steps.game.outputs.key }}
+          path: Arena-Kit.zip
+          compression-level: 0  # already zipped
+
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.release.tag_name }}
-          files: arena/Arena.zip
+          files: |
+            arena/Arena.zip
+            Arena-Kit.zip
