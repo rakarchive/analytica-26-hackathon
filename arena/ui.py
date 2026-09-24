@@ -1169,7 +1169,7 @@ class BaseApp:
         self.team_specs.insert(at, kept)
         self._field_changed()
         self.log(f"Kept {spec['name']} as it is now: {kept['name']} will stay exactly like this. "
-                 f"Keep editing {os.path.basename(src)}; after each run, Results compares the two.", UP)
+                 f"Keep editing {os.path.basename(src)}; after each run, the two are compared beside the board.", UP)
 
     def remove_bot(self, i):
         spec = self.specs[i]
@@ -1514,19 +1514,9 @@ class BaseApp:
     def finish(self):
         self.state = "final"
         self.working = False
-        points, rounds, stats = self.final_stats
+        _, _, stats = self.final_stats
         ranks = self.ranks(self.order())
-        out = self.run_info.get("out", "")
-        if out:
-            try:
-                # The app's totals include matches restored from a checkpoint;
-                # the engine's only cover this session.
-                points, rounds = self.pair_pts, self.pair_rnds
-                rows = harness.score_rows(self.specs, points, rounds, stats, self.run_info["ref_weight"])
-                harness.write_outputs(out, self.specs, points, rounds, rows, self.run_info)
-                self._append_log(f"Results saved to {out}", UP)
-            except OSError as e:
-                self._append_log(f"Could not save results to {out}: {e}", DOWN)
+        # Every match is already in the tournament file; CSVs are Export CSV's job.
         self.champion_index = min(ranks, key=ranks.get) if ranks else None
         header = self.run_info.get("header") or harness.TournamentFile.header(
             self.specs, self.run_info.get("reps", 0), self.run_info.get("seed"), False)

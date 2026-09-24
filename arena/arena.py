@@ -37,9 +37,9 @@ from ui import (ACCENT, BG, DIM, DOWN, FAINT, FG, LINE, PANEL, PANEL2, UP, WARN,
 # per run, so there is never an old one in the way.
 TOURNAMENT_DIR = os.path.join(tempfile.gettempdir(), "arena-tournaments")
 
-# Three places to be: your bots, how they did, and the matches themselves.
+# Two places to be: your bots and how they did, and the matches themselves.
 # Everything else lives under Options.
-VIEWS = [("bots", "Bots"), ("results", "Results"), ("matches", "Matches")]
+VIEWS = [("bots", "Bots"), ("matches", "Matches")]
 
 
 class Arena(BaseApp):
@@ -62,8 +62,8 @@ class Arena(BaseApp):
         root.bind("<Button-4>", lambda e: self._wheel(e, 1))
         root.bind("<Button-5>", lambda e: self._wheel(e, -1))
         self.show_view("bots")
-        self.log("Add your bots, check them, then run a tournament. Standings, Statistics and "
-                 "Explorer come alive once a run finishes.", FG)
+        self.log("Add your bots, check them, then run a tournament. The results appear beside "
+                 "the board; Matches holds every match played.", FG)
 
     # ---------------- settings ----------------
 
@@ -121,9 +121,6 @@ class Arena(BaseApp):
             b.pack(side="left", padx=(0, 8))
             self.buttons[key] = b
 
-        f = actions_for("results")
-        FlatButton(f, "Export CSV…", self.export_csv).pack(side="left", padx=(0, 8))
-
         f = actions_for("matches")
         for text, cmd in (("Only the selected bot", self.filter_selected),
                           ("All matches", self.filter_none)):
@@ -160,7 +157,8 @@ class Arena(BaseApp):
         f = line("FILE       ")
         self._entry(f, self.file_var, 40).pack(side="left", padx=(0, 8))
         FlatButton(f, "Choose…", self.choose_file).pack(side="left", padx=(0, 8))
-        FlatButton(f, "Open…", self.load_file_dialog).pack(side="left")
+        FlatButton(f, "Open…", self.load_file_dialog).pack(side="left", padx=(0, 8))
+        FlatButton(f, "Export CSV…", self.export_csv).pack(side="left")
 
         f = line("COMPARING  ")
         self._label(f, "House weight").pack(side="left")
@@ -214,13 +212,11 @@ class Arena(BaseApp):
         if self.view == "bots":
             if not any(s.get("added") for s in self.specs):
                 return "add your bot, then Check it"
-            return "Check a bot, or Run tournament. Keep this version before a big change"
-        if self.view == "results":
             if not self.tour:
-                return "run a tournament to see results"
+                return "Check a bot, or Run tournament. Keep this version before a big change"
             if len(self.selected) >= 2:
                 return "comparing the two selected bots"
-            return "click a bot for its details, two to compare them"
+            return "click a bot for its record, two to compare them"
         return getattr(self, "explorer_note", "click a match to watch it")
 
     # ---------------- tournament files ----------------
@@ -266,7 +262,7 @@ class Arena(BaseApp):
                  f"({tour.n} bots, {tour.reps} per pairing, seed {tour.seed}).", UP)
         if not tour.complete():
             self.log("It is unfinished: Run tournament carries on with it.", DIM)
-        self.show_view("results")
+        self.show_view("bots")
         return True
 
     def export_csv(self):
@@ -340,23 +336,23 @@ class Arena(BaseApp):
             self.stages[0].layout(*self.card_box)
             self._draw_match_list(*self.list_box)
             return
+        # Bots: the board, and beside it whatever is current, above the log.
         bw = W * 0.5
         self.board = (m, top, bw - m / 2, H - m)
         rx, rw = bw + m / 2, W - m - (bw + m / 2)
-        show_log = view == "bots"
-        panel_h = avail * (0.64 if show_log else 1.0)
+        panel_h = avail * 0.64
         self.card_box = (rx, top, rw, panel_h)
-        self.log_box = ((rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2) if show_log
-                        else (0, 0, 1, 1))
-        self._place_log(show_log)
+        self.log_box = (rx, top + panel_h + m / 2, rw, avail - panel_h - m / 2)
+        self._place_log(True)
         self._layout_board()
-        if view == "results":
-            if self.state == "running":
-                self._draw_run_panel(*self.card_box)
-            elif len(self.selected) >= 2:
-                self._draw_stats(*self.card_box)
-            else:
-                self._draw_details(*self.card_box)
+        if self.card:
+            return                  # a check's result: drawn over this spot (_draw_overlays)
+        if self.state == "running" or not self.tour:
+            self._draw_run_panel(*self.card_box)
+        elif len(self.selected) >= 2:
+            self._draw_stats(*self.card_box)
+        else:
+            self._draw_details(*self.card_box)
 
     def _place_log(self, visible):
         x, y, w, h = self.log_box
@@ -433,13 +429,13 @@ class Arena(BaseApp):
                        fill=DIM, font=self.f_card_label, tags="panel")
         order = sorted((j for j in range(self.n) if j != i and self.pair_rnds[i][j]),
                        key=lambda j: -self.pair_pts[i][j] / self.pair_rnds[i][j])
-        rh = min(30 * s, max(18 * s, (h - 130 * s) / max(1, len(order))))
+        rh = min(30 * s, max(12 * s, (h - 130 * s) / max(1, len(order))))
         f = tkfont.Font(family=self.family, size=-max(9, int(rh * 0.5)))
         yy = ty + 92 * s
         for j in order:
             mine = self.pair_pts[i][j] / self.pair_rnds[i][j]
             theirs = self.pair_pts[j][i] / self.pair_rnds[j][i]
-            cv.create_rectangle(tx, yy, tx + (w - 48 * s) * min(1.0, mine / 5), yy + rh - 4 * s,
+            cv.create_rectangle(tx, yy, tx + (w - 48 * s) * min(1.0, mine / harness.GAME.best), yy + rh - 4 * s,
                                 fill=PANEL2, width=0, tags="panel")
             cv.create_text(tx + 8 * s, yy + rh / 2 - 2 * s, text=self.display_name(j), anchor="w",
                            fill=FG, font=f, tags="panel")
@@ -532,10 +528,11 @@ class Arena(BaseApp):
     # ---------------- hooks ----------------
 
     def show_badges(self):
-        return self.view == "bots"
+        """Check results on the board until there are scores to show there."""
+        return self.view == "bots" and not self.show_scores()
 
     def show_scores(self):
-        return self.view != "bots" or bool(self.tour)
+        return bool(self.tour) or self.state in ("running", "paused")
 
     def _draw_overlays(self):
         if self.view == "bots":
@@ -543,7 +540,9 @@ class Arena(BaseApp):
 
     def click_row(self, i):
         super().click_row(i)
-        if self.view == "results":
+        if self.tour and self.card and self.card.get("state") == "done":
+            self.card = None        # the bot's record, not an old check result
+        if self.view == "bots":
             self.layout()
 
     def _log_breakdown(self, i):
@@ -580,7 +579,7 @@ class Arena(BaseApp):
         self._compare_with_kept()
         if self.run_info.get("out"):
             self._append_log(f"Saved to {self.run_info['out']}", UP)
-        self.show_view("results")
+        self.show_view("bots")
 
     def _advance(self, dt):
         """No live replays while running: results just go onto the standings."""
@@ -590,7 +589,7 @@ class Arena(BaseApp):
             if self.final_stats and self.applied >= self.played:
                 self.finish()
             now = time.perf_counter()
-            if self.view == "results" and now - self._panel_at > 0.5:
+            if self.view == "bots" and now - self._panel_at > 0.5:
                 self._panel_at = now          # keep the run panel's counters moving
                 self.layout()
         for st in self.stages:
@@ -605,6 +604,8 @@ class Arena(BaseApp):
 
     def run_or_stop(self):
         if self.state not in ("running", "paused"):
+            if self.card and self.card.get("state") == "done":
+                self.card = None    # make room for the run
             path = self.file_var.get().strip()
             self.resume = self._can_resume(path)
             if not self.resume:
@@ -613,7 +614,7 @@ class Arena(BaseApp):
                 self.file_var.set(harness.TournamentFile.next_free(base))
                 self.log(f"Saving to {self.file_var.get()}", DIM)
             self.run_started = time.perf_counter()
-            self.show_view("results")
+            self.show_view("bots")
         super().run_or_stop()
 
 
