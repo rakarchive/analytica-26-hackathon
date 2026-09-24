@@ -944,10 +944,12 @@ class BaseApp:
         self.f_champ = mk(48, "bold")
         self.f_card_label = mk(22, "bold")
         self.f_card_detail = mk(18)
-        self.f_mono = tkfont.Font(family="Consolas" if harness.WINDOWS else "Menlo",
-                                  size=-max(9, int(16 * s)))
+        mono = "Consolas" if harness.WINDOWS else "Menlo" if sys.platform == "darwin" else "DejaVu Sans Mono"
+        self.f_mono = tkfont.Font(family=mono, size=-max(9, int(16 * s)))
         f_ui = mk(19)
-        self.logbox.config(font=mk(24 if self.presenting else 19), tabs=(int(300 * s), int(400 * s)))
+        # The log is monospace: file paths, stderr lines and numbers line up.
+        self.logbox.config(font=tkfont.Font(family=mono, size=-max(9, int((21 if self.presenting else 16) * s))),
+                           tabs=(int(300 * s), int(400 * s)))
         for color in (FG, DIM, FAINT, DOWN, UP, WARN, MEDALS[1]):
             self.logbox.tag_configure(color, foreground=color)
         for w in self._all_widgets(self.toolbar):
