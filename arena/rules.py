@@ -118,7 +118,8 @@ class IPD(Game):
 
     def measure(self, m):
         met = super().measure(m)
-        met["coop"] = min(m["pa"], m["pb"]) / m["n"]
+        import harness
+        met["coop"] = min(harness.match_scores(m))
         # Cooperation out of nowhere: a long lock that still ended in cooperation.
         tail = [actual(c) == "C" and actual(d) == "C" for c, d in zip(m["a"][-12:], m["b"][-12:])]
         met["recovery"] = met["lock"] if met["lock"] >= 15 and all(tail) else 0

@@ -130,8 +130,9 @@ sends):
 
 == Rules
 
-+ *Flush standard output after every move*, or your bot will appear to hang
-  and forfeit every round. This is the most common way to lose an hour:
++ *Flush standard output after every move*, or your bot will appear to hang,
+  and every match will end at its first move. This is the most common way to
+  lose an hour:
   - Python: `print(move, flush=True)`
   - Java: `System.out.println(move); System.out.flush();`
   - C: `printf("%c\n", move); fflush(stdout);`
@@ -140,14 +141,14 @@ sends):
 + *No memory between matches.* Clear everything on `RESET`. Recognising an
   opponent from an earlier match is against the rules, even though the harness
   can't stop you.
-+ *50 ms per move.* A move that takes longer forfeits the round. Aim for well
++ *50 ms per move.* A move that takes longer counts as a crash. Aim for well
   under 1 ms on average: every bot makes hundreds of thousands of moves, and
   the whole tournament has to finish in minutes. Your first reply gets 10
   seconds, to give Java time to start.
-+ *Forfeits score 0.* A forfeited round counts as #D for your opponent and 0
-  for you. A bot that crashes forfeits the rest of that match and is
-  restarted for the next one. One that fails to start three times in a row is
-  out.
++ *A crash ends the match.* If your bot crashes, or is too slow, the match
+  ends there: the rounds it didn't play count as zero for it, and your
+  opponent is scored on the rounds that were played. Your bot is restarted
+  for its next match. One that fails to start three times in a row is out.
 + *One source file: Python, Java, C or C++*, standard library only. Nothing
   is installed on the tournament machine beyond the language itself, and we
   compile your bot exactly as the Arena does. In Java, the
