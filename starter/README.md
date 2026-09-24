@@ -66,9 +66,10 @@ Open `Arena.exe`. On the left is the board: every bot in the field. Beside it
 is a panel whose tabs follow what you pick on the board (click a bot to pick
 it, click it again to let go), and under that the log.
 
-**+ Add bot** — pick your bot's source file (`.py`, `.java`, `.c` or `.cpp`);
-you can select several at once. Java, C and C++ are compiled for you, the same
-way the tournament compiles them. Right-click a bot to change its run command.
+**+ Add bot**, under the board — pick your bot's source file (`.py`, `.java`,
+`.c` or `.cpp`); you can select several at once. Java, C and C++ are compiled
+for you, the same way the tournament compiles them. Right-click a bot to
+change its run command.
 
 **Check** — pick your bot and open the **Check** tab: its **Check** button
 plays your bot against the sparring partners and shows what, if anything, is
@@ -84,17 +85,18 @@ the difference is real or whether you simply haven't played enough matches.
 between two picked bots. Click one to see it round by round, with the moves
 noise changed marked. Hover over a round for the details.
 
-**Keep this version** freezes your bot as it is now: a copy joins the field as
-a fixed opponent, `my_bot (v1)`, and stays exactly like that while you carry
-on editing. After every run, the panel beside the board compares your bot
-with the version you kept last, and says whether the change really helped or
-whether you haven't played enough matches to know. Keep a version before each
-big change. The copies are saved in a `versions` folder beside your bot.
+**Keep this version**, next to it, freezes your bot as it is now: a copy joins
+the field as a fixed opponent, `my_bot (v1)`, and stays exactly like that
+while you carry on editing. After every run, the panel beside the board
+compares your bot with the version you kept last, and says whether the change
+really helped or whether you haven't played enough matches to know. Keep a
+version before each big change. The copies are saved in a `versions` folder
+beside your bot.
 
 **Run tournament** plays everyone against everyone: your bots plus sparring
 partners (always-rock, random, a cycler, a mirror, beat-your-last and
-beat-your-favourite). **Options** holds the rest: how many matches each
-pairing plays, the seed, and where the tournament file is saved.
+beat-your-favourite). **Advanced**, top right, holds the rest: how many
+matches each pairing plays, the seed, and where the tournament file is saved.
 
 Anything your bot prints to stderr is saved to a log file; the Arena says where
 after each run.
