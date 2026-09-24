@@ -150,7 +150,7 @@ sends):
   out.
 + *One source file: Python, Java, C or C++*, standard library only. Nothing
   is installed on the tournament machine beyond the language itself, and we
-  compile your bot exactly as the Arena does (see `README.md`). In Java, the
+  compile your bot exactly as the Arena does. In Java, the
   file's public class must share its name, and any other classes go inside the
   same file.
 + *No network, no files, no other processes.* Your bot talks to the
