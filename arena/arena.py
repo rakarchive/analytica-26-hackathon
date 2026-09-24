@@ -134,6 +134,9 @@ class Arena(BaseApp):
         # (see _header_right); Advanced's settings open under the header.
         self.opt_button = FlatButton(self.cv, "Advanced ▸", self.toggle_options)
         self.buttons["run"] = FlatButton(self.cv, "Run tournament", self.run_or_stop, primary=True)
+        # One width for both labels, Run tournament and Stop, so the counts
+        # beside it stay where they are when it changes.
+        self.buttons["run"].config(width=len("Run tournament") + 1)
 
         # Everything you rarely touch, in one place.
         opt = self.options = tk.Frame(tb, bg=PANEL, padx=14, pady=10, highlightthickness=1,
