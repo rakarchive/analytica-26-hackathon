@@ -1,4 +1,4 @@
-# A bot in Python. Run it with:  python my_bot.py
+# A bot in Python.
 # Print only your moves. For debugging, print to stderr instead:
 #     print("hello", file=sys.stderr)
 
