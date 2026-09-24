@@ -176,6 +176,9 @@ class Arena(BaseApp):
             self.options.pack(fill="x", pady=(10, 0))
         else:
             self.options.pack_forget()
+            # An emptied frame keeps its last size in Tk: shrink it back, or the
+            # settings' space stays taken after they are hidden.
+            self.toolbar.config(height=1)
         self.opt_button.config(text="Advanced ▾" if self.options_open else "Advanced ▸")
         self.layout()
 
