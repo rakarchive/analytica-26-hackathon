@@ -862,7 +862,7 @@ class BaseApp:
         self.rows = {}
         m = 28 * s
         self.m = m
-        cv.create_text(m, 20 * s, text=harness.GAME.title, anchor="nw", fill=FG, font=self.f_title)
+        cv.create_text(m, 20 * s, text=self.TITLE, anchor="nw", fill=FG, font=self.f_title)
         self.status = cv.create_text(W - m, 30 * s, text="", anchor="ne", fill=DIM, font=self.f_status)
         self.bar_box = (m, 82 * s, W - m, 92 * s)
         cv.create_rectangle(*self.bar_box, fill=PANEL2, width=0)

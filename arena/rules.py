@@ -25,7 +25,6 @@ def result(mine, theirs):
 
 class RPS(Game):
     key = "rps"
-    title = "ROCK PAPER SCISSORS"
     moves = (R, P, S)
     payoff = {(a, b): (result(a, b), result(b, a)) for a in (R, P, S) for b in (R, P, S)}
     best = 2
