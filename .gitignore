@@ -19,3 +19,12 @@ versions/
 
 # The local run of the GitHub workflow (ci/local_workflow.py): its tools and runs
 .ci/
+
+# What the Arena builds next to a bot it compiles (a template built in place)
+starter/templates/c/my_bot
+starter/templates/cpp/my_bot
+*.exe
+*.class
+
+# Copies iCloud makes when a synced file changes under it ("name 2.py")
+* 2.*

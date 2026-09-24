@@ -17,7 +17,6 @@ def actual(ch):
 
 class IPD(Game):
     key = "ipd"
-    title = "NOISY PRISONER'S DILEMMA"
     moves = (C, D)
     payoff = {(C, C): (3, 3), (C, D): (0, 5), (D, C): (5, 0), (D, D): (1, 1)}
     best = 5

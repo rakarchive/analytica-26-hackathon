@@ -6,7 +6,6 @@ class Game:
     """The rules, the words and the sparring partners for one game.
 
     key          short name, recorded in tournament files
-    title        what the app calls itself
     moves        the letters a bot may send, in a fixed order
     payoff       {(mine, theirs): (my points, their points)}
     best         the most a round can be worth (for the bars)
@@ -21,7 +20,6 @@ class Game:
     """
 
     key = ""
-    title = ""
     moves = ()
     payoff = {}
     best = 1
