@@ -26,16 +26,19 @@ One message per line.
 | ← bot | a move | Your move for this round: `R`, `P` or `S` here. |
 | → bot | `END` | Tournament over. Exit. |
 
-- **Flush stdout after every move.** If you don't, your bot hangs and forfeits
-  every round. Here's how to flush in each language:
+- **Flush stdout after every move.** If you don't, your bot hangs, and every
+  match it plays ends at its first move. Here's how to flush in each language:
   - Python: `print(move, flush=True)`
   - Java: `System.out.println(move); System.out.flush();`
   - C: `printf("%c\n", move); fflush(stdout);`
   - C++: `std::cout << move << std::endl;` (`"\n"` alone does not flush)
 - **stdout is for moves only.** Print debug output to stderr.
 - **Keeping state across matches is against the rules.** Clear everything on `RESET`.
-- **Timing:** a move that takes more than 50 ms forfeits the round. Aim for
-  well under 1 ms on average: every bot makes hundreds of thousands of moves.
+- **A crash ends the match there**, and so does a move that takes more than
+  50 ms. The rounds your bot didn't play count as zero for it; your opponent is
+  scored on the rounds that were played. Your bot is restarted for its next
+  match. Aim for well under 1 ms
+  on average: every bot makes hundreds of thousands of moves.
 - Exit when stdin closes, as well as on `END`.
 
 **Why you are told your own move.** Moves are noisy: sometimes what comes out
