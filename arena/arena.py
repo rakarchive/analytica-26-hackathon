@@ -319,10 +319,10 @@ class Arena(BaseApp):
         self.layout()
 
     def open_match(self, m):
-        """Replay one match from the file in the viewer."""
-        self.rps = 60.0
+        """Show one match from the file in the viewer, all of it at once."""
         self.stages[0].start((m["i"], m["j"], m["pa"], m["pb"], m["n"], (m["a"], m["b"])), pinned=True,
                              title=f"repetition {m['r'] + 1}")   # the names are already on show
+        self.stages[0].reveal()
 
     # ---------------- layout ----------------
 

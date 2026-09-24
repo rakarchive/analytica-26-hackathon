@@ -385,6 +385,12 @@ class Stage:
                       + f"round {self.drawn} / {n}")
         cv.itemconfig(self.flip_txt, text=f"⚡ {self.flips} flipped by noise" if self.flips else "")
 
+    def reveal(self):
+        """Show the whole match at once instead of replaying it."""
+        if self.match:
+            self.pos = self.match[4]
+            self.step(0.0, 0.0)
+
     def step(self, dt, rps):
         if not self.match:
             return
