@@ -14,6 +14,9 @@ here: this is a player. It goes
                   racing, with a shout whenever the top two change.
   3. The winner   champion and runner-up.
 
+The toolbar sets how many highlights there are, how fast they replay and
+how long the timelapse takes; the settings are remembered between runs.
+
 Keys:  SPACE start/pause · → next · H house bot names · L log · Esc leave
        presentation · F11 fullscreen
 """
@@ -46,18 +49,40 @@ def mix(c1, c2, t):
     return "#" + "".join(f"{round(x + (y - x) * t):02x}" for x, y in zip(a, b))
 
 
+# The presentation's settings, from the toolbar: (default, lowest, highest).
+SETTINGS = {"highlights": (10, 0, 30),       # matches shown before the winner's, unless curated
+            "speed": (45, 5, 400),           # rounds per second, replaying a highlight
+            "timelapse": (90, 10, 600)}      # seconds for the leaderboard to fill
+# Remembered between runs, so a restart on the day keeps them.
+SETTINGS_FILE = os.path.join(os.path.expanduser("~"), ".analytica-show.json")
+
+
+def load_settings():
+    try:
+        with open(SETTINGS_FILE) as f:
+            saved = json.load(f)
+    except (OSError, ValueError):
+        saved = {}
+    return {k: saved.get(k, d) if isinstance(saved.get(k), (int, float)) else d
+            for k, (d, _, _) in SETTINGS.items()}
+
+
 class Show(BaseApp):
     """A player: no engine, no bots, just the file and the reveal."""
 
     TITLE = "ANALYTICA - INTEGRATE AND CONQUER"
 
-    def __init__(self, root, tour=None, highlights=10, timelapse=90.0):
+    def __init__(self, root, tour=None, highlights=None, timelapse=None, speed=None, save=True):
+        values = load_settings()
+        for k, v in (("highlights", highlights), ("timelapse", timelapse), ("speed", speed)):
+            if v is not None:
+                values[k] = v
+        self.save_settings = save
+        self.setting_vars = {k: tk.StringVar(root, value=f"{v:g}") for k, v in values.items()}
         self.tour = None
         self.show_log = False        # the log is behind a disclosure (L)
         self.toasts = []             # [text, color, kind, shown_at]
         self.phase = "empty"         # empty, ready, highlights, timelapse, final
-        self.highlight_count = highlights
-        self.timelapse_secs = timelapse
         self.highlights, self.hl_idx, self.hl_title = [], 0, ""
         self.queue = []              # matches still to apply in the timelapse
         self.budget = 0.0
@@ -71,10 +96,42 @@ class Show(BaseApp):
         for key, fn in (("<space>", self.space), ("<Right>", self.advance), ("<Return>", self.advance),
                         ("<Key-h>", self.toggle_house), ("<Key-l>", self.toggle_log)):
             root.bind(key, lambda e, fn=fn: fn())
+        for var in self.setting_vars.values():
+            var.trace_add("write", lambda *_: self._settings_changed())
         if tour:
             self.open(tour)
 
     # ---------------- setup ----------------
+
+    def setting(self, key):
+        """A setting's value, kept in range; the default while a box holds
+        something that isn't a number (half-typed, say)."""
+        default, lo, hi = SETTINGS[key]
+        try:
+            return max(lo, min(hi, float(self.setting_vars[key].get())))
+        except ValueError:
+            return default
+
+    @property
+    def highlight_count(self):
+        return int(self.setting("highlights"))
+
+    @property
+    def timelapse_secs(self):
+        return self.setting("timelapse")
+
+    def _settings_changed(self):
+        if self.save_settings:
+            try:
+                with open(SETTINGS_FILE, "w") as f:
+                    json.dump({k: self.setting(k) for k in SETTINGS}, f)
+            except OSError:
+                pass
+        if self.phase == "highlights":
+            self.rps = self.setting("speed")
+        if self.tour and self.phase == "ready" and not self.picks_path:
+            self._pick_highlights()
+            self._ready_hint()
 
     def _build_toolbar(self, tb):
         f = tk.Frame(tb, bg=BG)
@@ -86,6 +143,17 @@ class Show(BaseApp):
         self.buttons["start"].pack(side="left", padx=(0, 12))
         self.hint = self._label(f, "Open a tournament file saved by the Arena.", FAINT)
         self.hint.pack(side="left")
+
+        f = tk.Frame(tb, bg=BG)
+        f.pack(fill="x", pady=(10, 0))
+        for key, label, unit, inc in (
+                ("highlights", "Highlights", "matches, then the winner's best", 1),
+                ("speed", "Replay speed", "rounds a second", 5),
+                ("timelapse", "Leaderboard timelapse", "seconds", 10)):
+            _, lo, hi = SETTINGS[key]
+            self._label(f, label).pack(side="left")
+            self._spin(f, self.setting_vars[key], lo, hi, inc=inc, width=4).pack(side="left", padx=(6, 4))
+            self._label(f, unit, FAINT).pack(side="left", padx=(0, 18))
 
     def _refresh_buttons(self):
         if "start" in self.buttons:
@@ -104,6 +172,7 @@ class Show(BaseApp):
             self.picks_path = path
             if self.tour:
                 self._pick_highlights()
+                self._ready_hint()
                 self.layout()
 
     def open_notes_dialog(self):
@@ -194,10 +263,13 @@ class Show(BaseApp):
         self.total = len(self.queue)
         self.log(f"{os.path.basename(path)}: {len(tour):,} matches, {tour.n} bots, "
                  f"{tour.reps} per pairing. {len(self.highlights)} highlights ready.", UP)
-        self.hint.config(text=f"{len(self.highlights)} highlights, then the timelapse. Press Present.")
+        self._ready_hint()
         self.layout()
         self._refresh_buttons()
         return True
+
+    def _ready_hint(self):
+        self.hint.config(text=f"{len(self.highlights)} highlights, then the timelapse. Press Present.")
 
     # ---------------- running the show ----------------
 
@@ -206,7 +278,7 @@ class Show(BaseApp):
             return
         self.present(True)
         self.phase = "highlights"
-        self.rps = 45.0
+        self.rps = self.setting("speed")
         self.notify(f"{len(self.highlights)} matches worth watching. Press → for each one",
                     MEDALS[1], kind="phase")
         self.advance()
@@ -519,7 +591,7 @@ def selftest(report_path, tournament):
     report = open(report_path, "w", buffering=1)
     try:
         root = tk.Tk()
-        app = Show(root, None, 3, 2.0)
+        app = Show(root, None, highlights=3, timelapse=10, save=False)
         if not app.open(tournament):
             raise RuntimeError(f"could not open {tournament}")
         report.write(f"game: {harness.GAME.key} · {len(app.tour)} matches, "
@@ -546,15 +618,16 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("tournament", nargs="?", help="a tournament file saved by the Arena")
-    ap.add_argument("--highlights", type=int, default=10, help="how many matches to show")
-    ap.add_argument("--timelapse", type=float, default=90.0, help="seconds for the leaderboard")
+    ap.add_argument("--highlights", type=int, help="how many matches to show")
+    ap.add_argument("--speed", type=float, help="rounds a second, replaying a highlight")
+    ap.add_argument("--timelapse", type=float, help="seconds for the leaderboard")
     ap.add_argument("--present", action="store_true", help="go straight to fullscreen")
     ap.add_argument("--selftest", metavar="REPORT", help=argparse.SUPPRESS)
     args = ap.parse_args()
     if args.selftest:
         sys.exit(selftest(args.selftest, args.tournament))
     root = tk.Tk()
-    app = Show(root, args.tournament, args.highlights, args.timelapse)
+    app = Show(root, args.tournament, args.highlights, args.timelapse, args.speed)
     if app.tour:
         if args.present:
             root.after(300, lambda: app.present(True))
