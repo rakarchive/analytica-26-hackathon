@@ -28,3 +28,8 @@ starter/templates/cpp/my_bot
 
 # Copies iCloud makes when a synced file changes under it ("name 2.py")
 * 2.*
+
+# The macOS kit: its downloads and what it builds
+kit/.cache-macos/
+Arena-Kit-macOS/
+Arena-Kit-macOS.zip
