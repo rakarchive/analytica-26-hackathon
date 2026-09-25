@@ -151,7 +151,10 @@ if [ ! -x "$VENV/bin/python" ]; then
     "$KITPY" -m venv "$VENV"
     "$VENV/bin/python" -m pip install -q "pyinstaller==6.*"
 fi
-( cd "$SRC/arena" && "$VENV/bin/pyinstaller" --noconfirm --log-level WARN --onefile --windowed \
+# This Python links Tk into itself and finds Tk's files relative to itself, which a
+# venv breaks; without these PyInstaller decides Tk is broken and leaves it out.
+export TCL_LIBRARY="$TOOLS/python/lib/tcl8.6" TK_LIBRARY="$TOOLS/python/lib/tk8.6"
+( cd "$SRC/arena" && "$VENV/bin/pyinstaller" --noconfirm --clean --log-level WARN --onefile --windowed \
       --name Arena --hidden-import sparring --hidden-import harness --hidden-import rules \
       --distpath "$CACHE/dist" --workpath "$CACHE/build" --specpath "$CACHE" arena.py )
 cp -R "$CACHE/dist/Arena.app" "$OUT/Arena.app"
@@ -207,9 +210,16 @@ MOVES=$(run python3 -c "import sys; sys.path.insert(0, sys.argv[1]); from rules 
 SESSION=$(printf 'RESET\nROUND - -\nROUND %s %s\nEND\n' "${MOVES:0:1}" "${MOVES: -1}")
 T=$(mktemp -d "$CACHE/templates.XXXX")
 cp -R "$OUT/templates/." "$T/"
-( cd "$T/java" && run javac MyBot.java )
-( cd "$T/c" && run gcc -O2 -o my_bot my_bot.c -lm )
-( cd "$T/cpp" && run g++ -O2 -std=c++17 -o my_bot my_bot.cpp )
+# Built as the Arena builds them. The first C++ build compiles Zig's own libc++,
+# with a lot of harmless warnings: show the output only if a build fails.
+build_quietly() {
+    local dir="$1"; shift
+    ( cd "$T/$dir" && run "$@" ) > "$CACHE/build-$dir.log" 2>&1 || {
+        tail -30 "$CACHE/build-$dir.log"; say "the $dir template did not build" >&2; exit 1; }
+}
+build_quietly java javac MyBot.java
+build_quietly c gcc -O2 -o my_bot my_bot.c -lm
+build_quietly cpp g++ -O2 -std=c++17 -o my_bot my_bot.cpp
 for lang in python java c cpp; do
     case $lang in
         python) cmd=(python3 my_bot.py) ;;
@@ -239,7 +249,11 @@ with tempfile.TemporaryDirectory() as tmp:
         checked += 1
         bad += [f"{name}: {line.strip()}" for line in out.splitlines()[1:]
                 if "/nix/" in line or "/opt/homebrew" in line or "/usr/local/" in line]
-print(f"  {checked} bundled libraries, none tied to this machine" if not bad else "\n".join(bad))
+tk = [n for n in car.toc if n.startswith(("_tcl_data", "_tk_data"))]
+if not any(n.startswith("_tcl_data") for n in tk) or not any(n.startswith("_tk_data") for n in tk):
+    bad.append("Tcl/Tk's files are not in the bundle: the Arena could not open a window")
+print(f"  {checked} bundled libraries, none tied to this machine; Tcl/Tk bundled ({len(tk)} files)"
+      if not bad else "\n".join(bad))
 sys.exit(1 if bad else 0)
 PY
 
