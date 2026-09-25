@@ -5,7 +5,9 @@ name: Build Arena
 # Arena.zip, Arena.exe plus the starter pack (README and bot templates in
 # Python, Java, C and C++), and Arena-Kit.zip, the flash-drive kit: the same
 # with Python, a JDK and MinGW gcc/g++ alongside, so nothing needs installing.
-# Runs only when a GitHub release is published, and attaches both to it.
+# It also builds Show.exe, the organisers' show (organizer/show.py), which is
+# in neither download. Runs only when a GitHub release is published, and
+# attaches all three to it.
 #
 # The game is whichever one the release's branch plays (arena/rules.py): the
 # ipd branch for the event, the rps branch for the practice pack.
@@ -131,6 +133,32 @@ jobs:
             throw "the exe is not playing ${{ steps.game.outputs.key }}"
           }
 
+      - name: Build Show.exe
+        # The show replays a tournament file: it needs the engine's modules,
+        # which live in arena/, but no bots.
+        run: >
+          pyinstaller --onefile --windowed --name Show --paths .
+          --hidden-import harness --hidden-import rules --hidden-import finder --hidden-import game
+          ..\organizer\show.py
+
+      - name: Self-test the packaged show
+        # Replays the tournament the Arena's self-test saved beside its
+        # report: every highlight, then the timelapse to the champion.
+        timeout-minutes: 4
+        run: |
+          $report = Join-Path $PWD "show-selftest.txt"
+          $tournament = Join-Path $PWD "selftest.jsonl"
+          $p = Start-Process -FilePath dist\Show.exe -ArgumentList '--selftest', "`"$report`"", "`"$tournament`"" -PassThru
+          $null = $p.Handle   # keeps the exit code readable after it exits
+          $finished = $p.WaitForExit(120000)
+          if (-not $finished) { taskkill /PID $p.Id /T /F | Out-Null }
+          if (Test-Path $report) { Get-Content $report } else { Write-Host "(no report was written)" }
+          if (-not $finished) { throw "Show.exe self-test did not finish within 2 minutes" }
+          if ($p.ExitCode -ne 0) { throw "Show.exe self-test failed (exit $($p.ExitCode))" }
+          if (-not (Select-String -Path $report -Pattern "game: ${{ steps.game.outputs.key }}")) {
+            throw "the show is not playing ${{ steps.game.outputs.key }}"
+          }
+
       - name: Assemble the download
         run: |
           New-Item -ItemType Directory -Force package | Out-Null
@@ -186,6 +214,11 @@ jobs:
           path: Arena-Kit.zip
           compression-level: 0  # already zipped
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Show-${{ steps.game.outputs.key }}
+          path: arena/dist/Show.exe
+
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
@@ -193,3 +226,4 @@ jobs:
           files: |
             arena/Arena.zip
             Arena-Kit.zip
+            arena/dist/Show.exe
