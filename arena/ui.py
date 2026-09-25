@@ -95,16 +95,23 @@ def adopt_portable_tools():
     kit on a flash drive brings its own Python, JDK and g++ with it: nothing
     installed, nothing changed outside this process."""
     home = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__))
+    # A macOS app runs from inside Arena.app/Contents/MacOS: the kit is beside the app.
+    inside = os.path.join("Contents", "MacOS")
+    if FROZEN and home.endswith(".app" + os.sep + inside):
+        home = os.path.dirname(home[: -len(os.sep + inside)])
     tools = os.path.join(home, "tools")
     if not os.path.isdir(tools):
         return []
     global PORTABLE_PYTHON
     added = []
-    for rel in ("python", os.path.join("jdk", "bin"), os.path.join("mingw", "bin")):
+    # Windows kit: python\, jdk\bin, mingw\bin. macOS kit: python/bin, jdk/bin,
+    # and bin/, which holds gcc and g++ (wrappers around the kit's Zig).
+    for rel in ("python", os.path.join("python", "bin"), os.path.join("jdk", "bin"),
+                os.path.join("mingw", "bin"), "bin"):
         d = os.path.join(tools, rel)
         if os.path.isdir(d):
             added.append(d)
-            if rel == "python":
+            if any(os.path.exists(os.path.join(d, exe)) for exe in ("python.exe", "python3")):
                 PORTABLE_PYTHON = d
     jdk = os.path.join(tools, "jdk")
     if os.path.isdir(jdk):
