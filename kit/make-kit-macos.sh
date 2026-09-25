@@ -232,6 +232,17 @@ for lang in python java c cpp; do
 done
 rm -rf "$T"
 
+# A practice kit must not give the real game away: the same check as the
+# Windows build's, over what the kit adds to the branch's own files.
+KEY=$(run python3 -c "import sys; sys.path.insert(0, sys.argv[1]); from rules import GAME; print(GAME.key)" "$SRC/arena")
+if [ "$KEY" != ipd ]; then
+    LEAKS=$( { grep -r -n -i -E "prisoner|cooperat|defect|tit.for.tat|titfortat|pavlov|grudge|\bipd\b" \
+                   "$OUT/README.txt" "$OUT/README-protocol.md" "$OUT/Terminal here.command" "$OUT/templates" \
+                   "$SRC/arena"/*.py || true; } )
+    if [ -n "$LEAKS" ]; then printf '%s\n' "$LEAKS"; say "the practice kit names the real game" >&2; exit 1; fi
+    say "  nothing in the practice kit names the real game"
+fi
+
 # The app must carry nothing from this machine: no /nix/store paths in any
 # library it bundles.
 "$VENV/bin/python" - "$CACHE/dist/Arena" <<'PY'
