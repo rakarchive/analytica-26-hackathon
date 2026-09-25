@@ -46,3 +46,27 @@ installation. Python bots work even if `tools\python` is missing, because the
 Arena runs them with the interpreter inside the exe.
 
 Windows will warn that the app is unsigned: *More info → Run anyway*.
+
+## The macOS kit
+
+For Apple Silicon Macs, `make-kit-macos.sh` builds the same kit: `Arena.app`
+plus a relocatable Python (python-build-standalone), Temurin's JDK, and Zig,
+whose clang compiles C and C++ behind `gcc` and `g++` wrappers without Xcode.
+Run it on a Mac with internet:
+
+```bash
+kit/make-kit-macos.sh --branch rps     # the practice kit; ipd for the event
+```
+
+It builds the Arena from the branch with the kit's own Python, so the app
+carries nothing from the machine that built it, then checks the kit: every
+template built and played with only the kit's tools, no bundled library tied
+to the build machine, Tcl/Tk bundled, and the Arena's self-test. The result is
+`Arena-Kit-macOS/` and `Arena-Kit-macOS.zip` (about 340 MB). Downloads are
+cached in `kit/.cache-macos` and checked: the JDK and Zig against their
+published checksums, Python against `hashes-macos.json`.
+
+Copy it to the flash drives as a folder. macOS marks files that came from a
+download as quarantined and then refuses to run the tools inside; files
+copied from a drive aren't marked. The kit's README.txt says how to clear the
+mark if someone downloads it instead.
