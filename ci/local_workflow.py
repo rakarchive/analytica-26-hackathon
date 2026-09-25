@@ -170,7 +170,7 @@ class Run:
     def build_show(self):
         self.step("Build the show")
         self.show_exe = self.pyinstaller("Show", os.path.join("..", "organizer", "show.py"),
-                                         ["harness", "rules", "finder", "game"], ["--paths", "."])
+                                         ["sparring", "harness", "rules", "finder", "game"], ["--paths", "."])
 
     def pyinstaller(self, name, script, hidden, extra=()):
         venv = os.path.join(CI, "venv")
