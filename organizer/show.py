@@ -1,6 +1,8 @@
 """The show: open a tournament file and perform the reveal.
 
-    python show.py tournament.jsonl [--present]
+    python show.py [tournament.jsonl] [--present]
+
+Without a file it asks for one when it starts.
 
 The matches were all played beforehand by the Arena, so nothing is computed
 here: this is a player. It goes
@@ -20,6 +22,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 import time
 import tkinter as tk
 from tkinter import filedialog
@@ -148,11 +151,13 @@ class Show(BaseApp):
         self.hl_idx = 0
 
     def open_dialog(self):
+        # Start where the Arena saves its tournaments, if it has saved any.
+        arena_dir = os.path.join(tempfile.gettempdir(), "arena-tournaments")
         path = filedialog.askopenfilename(title="Open a tournament file",
+                                          initialdir=arena_dir if os.path.isdir(arena_dir) else None,
                                           filetypes=[("Tournament", "*.jsonl *.gz"),
                                                      ("All files", "*.*")])
-        if path:
-            self.open(path)
+        return bool(path) and self.open(path)
 
     def open(self, path):
         tour = harness.TournamentFile.load(path)
@@ -510,8 +515,12 @@ def main():
     args = ap.parse_args()
     root = tk.Tk()
     app = Show(root, args.tournament, args.highlights, args.timelapse)
-    if args.present and app.tour:
-        root.after(300, lambda: app.present(True))
+    if app.tour:
+        if args.present:
+            root.after(300, lambda: app.present(True))
+    else:
+        # No file given: ask for one as soon as the window is up.
+        root.after(200, lambda: app.open_dialog() and args.present and app.present(True))
     root.mainloop()
 
 
