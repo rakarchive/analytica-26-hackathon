@@ -134,11 +134,12 @@ jobs:
           }
 
       - name: Build Show.exe
-        # The show replays a tournament file: it needs the engine's modules,
-        # which live in arena/, but no bots.
+        # The show replays a tournament file: it runs no bots, but it needs
+        # the engine's modules from arena/, the sparring partners among them.
         run: >
           pyinstaller --onefile --windowed --name Show --paths .
-          --hidden-import harness --hidden-import rules --hidden-import finder --hidden-import game
+          --hidden-import sparring --hidden-import harness --hidden-import rules
+          --hidden-import finder --hidden-import game
           ..\organizer\show.py
 
       - name: Self-test the packaged show
