@@ -164,6 +164,10 @@ class Show(BaseApp):
         if not tour:
             self.log(f"{path} is not a tournament file.", DOWN)
             return False
+        if tour.header.get("game", harness.GAME.key) != harness.GAME.key:
+            self.log(f"{os.path.basename(path)} is a {tour.header['game']} tournament, "
+                     f"and this show plays {harness.GAME.key}.", DOWN)
+            return False
         if not tour.has_moves():
             self.log("That file has no moves in it, so there is nothing to replay.", DOWN)
             return False
@@ -505,6 +509,39 @@ class Show(BaseApp):
             self.layout()
 
 
+def selftest(report_path, tournament):
+    """A check of a packaged build, for CI: open the file (the Arena's
+    self-test saves one), step through every highlight and play the timelapse
+    to the champion, in the real window with the real event loop. A windowed
+    exe has no console, so the result goes to a file, written as it goes."""
+    import traceback
+    ok = False
+    report = open(report_path, "w", buffering=1)
+    try:
+        root = tk.Tk()
+        app = Show(root, None, 3, 2.0)
+        if not app.open(tournament):
+            raise RuntimeError(f"could not open {tournament}")
+        report.write(f"game: {harness.GAME.key} · {len(app.tour)} matches, "
+                     f"{len(app.highlights)} highlights\n")
+        app.start()
+        deadline = time.perf_counter() + 60
+        while app.phase != "final" and time.perf_counter() < deadline:
+            if app.phase == "highlights":
+                app.advance()
+            for _ in range(20):
+                root.update()
+                time.sleep(0.01)
+        report.write(f"reached: {app.phase} · champion: {app.champion}\n")
+        ok = app.phase == "final" and app.champion is not None and app.highlights
+        root.destroy()
+    except Exception:
+        report.write(traceback.format_exc())
+    report.write("PASS\n" if ok else "FAIL\n")
+    report.close()
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -512,7 +549,10 @@ def main():
     ap.add_argument("--highlights", type=int, default=10, help="how many matches to show")
     ap.add_argument("--timelapse", type=float, default=90.0, help="seconds for the leaderboard")
     ap.add_argument("--present", action="store_true", help="go straight to fullscreen")
+    ap.add_argument("--selftest", metavar="REPORT", help=argparse.SUPPRESS)
     args = ap.parse_args()
+    if args.selftest:
+        sys.exit(selftest(args.selftest, args.tournament))
     root = tk.Tk()
     app = Show(root, args.tournament, args.highlights, args.timelapse)
     if app.tour:

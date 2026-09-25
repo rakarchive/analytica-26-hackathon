@@ -1074,7 +1074,9 @@ def selftest(report_path):
         say(f"protocol check: {rep.worst}")
         for line in rep.lines():
             say("    " + line)
-        specs = [bot] + baseline_specs()
+        # Two copies, so the tournament has a team-against-team match for
+        # the show's self-test to pick as a highlight.
+        specs = [bot, dict(bot, name="selftest_bot_2")] + baseline_specs()
         say(f"round robin: {len(specs)} bots, 2 per pairing, 2 workers")
         marks = set()
 
@@ -1083,8 +1085,15 @@ def selftest(report_path):
             if step not in marks:
                 marks.add(step)
                 say(f"  {done} of {total} matches")
+        # Saved beside the report, for CI to replay in the show's self-test.
+        record = harness.TournamentFile(os.path.splitext(report_path)[0] + ".jsonl",
+                                        harness.TournamentFile.header(specs, 2, 1, False))
+
+        def on_match(i, j, pa, pb, n, moves, rep, na, nb, ended):
+            record.add(i, j, rep, pa, pb, n, moves, na, nb, ended)
         points, rounds, stats = harness.run_round_robin(specs, 2, seed=1, workers=2, log_dir=folder,
-                                                        progress=progress)
+                                                        progress=progress, on_match=on_match)
+        record.close()
         st = stats[0].summary()
         per_round = sum(points[0]) / max(1, sum(rounds[0]))
         say(f"selftest_bot: {per_round:.3f} pts/round, {st['moves']} moves, "

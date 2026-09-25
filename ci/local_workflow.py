@@ -9,7 +9,9 @@ here, so this does the same steps natively, in the same order:
   4. build the Arena with PyInstaller, with the workflow's options
   5. self-test the packaged app (and, extra here, again with no Python on
      the PATH, so bots run on the app's own interpreter)
-  6. assemble the download: the app, README.md and the templates, zipped
+  6. build the show (organizer/show.py) the same way, and self-test it on
+     the tournament the Arena's self-test saved
+  7. assemble the download: the app, README.md and the templates, zipped
 
 It works on a snapshot of one commit, extracted under .ci/work, so the
 working tree can change while it runs. Runs take turns. The log, the
@@ -163,6 +165,14 @@ class Run:
 
     def build(self):
         self.step("Build Arena")
+        self.exe = self.pyinstaller("Arena", "arena.py", ["sparring", "harness", "rules"])
+
+    def build_show(self):
+        self.step("Build the show")
+        self.show_exe = self.pyinstaller("Show", os.path.join("..", "organizer", "show.py"),
+                                         ["harness", "rules", "finder", "game"], ["--paths", "."])
+
+    def pyinstaller(self, name, script, hidden, extra=()):
         venv = os.path.join(CI, "venv")
         vpy = os.path.join(venv, "Scripts" if WINDOWS else "bin", "python" + EXE)
         if not os.path.exists(vpy):
@@ -171,14 +181,14 @@ class Run:
             self.sh([vpy, "-m", "pip", "install", "-q", "pyinstaller==6.*"], cwd=ROOT, timeout=900)
         env = dict(self.env)
         env.update(self.tk_libraries(vpy))
+        imports = [a for h in hidden for a in ("--hidden-import", h)]
         self.sh([vpy, "-m", "PyInstaller", "--noconfirm", "--log-level", "WARN", "--onefile", "--windowed",
-                 "--name", "Arena", "--hidden-import", "sparring", "--hidden-import", "harness",
-                 "--hidden-import", "rules", "arena.py"], cwd=self.arena, env=env, timeout=1200)
-        self.exe = os.path.join(self.arena, "dist", "Arena" + EXE)
-        if not os.path.isfile(self.exe):
-            raise Failed("PyInstaller made no Arena" + EXE)
-        self.log(f"built {os.path.relpath(self.exe, self.work)} "
-                 f"({os.path.getsize(self.exe) / 1e6:.1f} MB)")
+                 "--name", name, *imports, *extra, script], cwd=self.arena, env=env, timeout=1200)
+        exe = os.path.join(self.arena, "dist", name + EXE)
+        if not os.path.isfile(exe):
+            raise Failed(f"PyInstaller made no {name}{EXE}")
+        self.log(f"built {os.path.relpath(exe, self.work)} ({os.path.getsize(exe) / 1e6:.1f} MB)")
+        return exe
 
     def tk_libraries(self, vpy):
         """PyInstaller looks for Tk's script library next to Tcl's. Some
@@ -222,6 +232,26 @@ class Run:
             raise Failed(f"the self-test failed (exit {proc.returncode})")
         if f"game: {self.key}" not in open(report).read():
             raise Failed(f"the app is not playing {self.key}")
+
+    def show_self_test(self):
+        self.step("Self-test the packaged show")
+        tournament = os.path.join(self.out, "selftest.jsonl")   # saved by the Arena's self-test
+        report = os.path.join(self.out, "show-selftest.txt")
+        if os.path.exists(report):
+            os.remove(report)
+        proc = subprocess.Popen([self.show_exe, "--selftest", report, tournament], cwd=self.arena,
+                                env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            proc.wait(timeout=120)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            self.log(open(report).read() if os.path.exists(report) else "(no report was written)")
+            raise Failed("the show's self-test did not finish within 2 minutes")
+        self.log(open(report).read() if os.path.exists(report) else "(no report was written)")
+        if proc.returncode != 0:
+            raise Failed(f"the show's self-test failed (exit {proc.returncode})")
+        if f"game: {self.key}" not in open(report).read():
+            raise Failed(f"the show is not playing {self.key}")
 
     def assemble(self):
         self.step("Assemble the download")
@@ -270,6 +300,8 @@ class Run:
                                             and not glob.glob(os.path.join(p, "py" + EXE)))
         self.self_test("Self-test with no Python on the PATH (bots run on the app's own Python)",
                        no_python)
+        self.build_show()
+        self.show_self_test()
         self.assemble()
 
 
