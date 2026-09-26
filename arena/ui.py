@@ -328,10 +328,9 @@ class Stage:
         self.flips = 0
         self.glows = []
         self.hold = 0.0
+        # Not placed yet (the window has no size so far): the first layout draws it.
         if hasattr(self, "w"):
             self.layout(self.x, self.y, self.w, self.h)   # its labels change the header's height
-        else:
-            self._draw_static()
 
     def _draw_waiting(self):
         self.cv.delete(self.tag + "dyn")
@@ -417,8 +416,8 @@ class Stage:
             self.step(0.0, 0.0)
 
     def step(self, dt, rps):
-        if not self.match:
-            return
+        if not self.match or not hasattr(self, "w"):
+            return   # nothing to replay, or nowhere to draw it yet
         cv, n = self.cv, self.match[4]
         if self.hold:
             self.hold -= dt
