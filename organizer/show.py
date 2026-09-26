@@ -596,6 +596,12 @@ def selftest(report_path, tournament):
             raise RuntimeError(f"could not open {tournament}")
         report.write(f"game: {harness.GAME.key} · {len(app.tour)} matches, "
                      f"{len(app.highlights)} highlights\n")
+        # Present when a person would: once the window is on screen.
+        deadline = time.perf_counter() + 20
+        while app.cv.winfo_width() < 50 and time.perf_counter() < deadline:
+            root.update()
+            time.sleep(0.02)
+        report.write(f"window: {app.cv.winfo_width()}x{app.cv.winfo_height()}\n")
         app.start()
         deadline = time.perf_counter() + 60
         while app.phase != "final" and time.perf_counter() < deadline:
