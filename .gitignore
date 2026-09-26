@@ -6,6 +6,8 @@ arena/package/
 arena/*.spec
 arena/Arena.zip
 arena/selftest.txt
+arena/selftest.jsonl
+arena/show-selftest.txt
 
 # Flash-drive kit: downloads and the assembled folder
 kit/.cache/
